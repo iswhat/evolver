@@ -1,6 +1,5 @@
 assets/cover.png
 /test/
-/scripts/
 /docs/
 /memory/
 /dist-public/
@@ -9,3 +8,4 @@ docker-compose.test.yml
 .gitignore
 CONTRIBUTING.md
 MEMORY.md
+public.manifest.json
