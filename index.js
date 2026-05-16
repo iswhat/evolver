@@ -326,6 +326,29 @@ async function main() {
           }
         } catch (_diagErr) { /* diagnostics must never block startup */ }
 
+        // Hub outcome mirror diagnostic. memoryGraph.syncEventToHub posts every
+        // outcome/attempt/solidify/skill_emit event to <hub>/a2a/memory/event
+        // by default, which is what populates this node's recall stream from
+        // the Hub side (consumed by gep-mcp-server's gep_recall). It is silent
+        // best-effort: failures don't crash the daemon but also don't surface,
+        // so users get a "why does gep_recall return 0 matches" puzzle. A
+        // single startup line says explicitly whether the mirror is on, what
+        // node it would post as, and what to flip if you want it off.
+        try {
+          const a2a = require('./src/gep/a2aProtocol');
+          const mirrorOff = process.env.MEMORY_GRAPH_SYNC_HUB === '0';
+          const hubUrl = typeof a2a.getHubUrl === 'function' ? a2a.getHubUrl() : '';
+          const nodeId = typeof a2a.getNodeId === 'function' ? a2a.getNodeId() : '';
+          const hasSecret = typeof a2a.getHubNodeSecret === 'function' && !!a2a.getHubNodeSecret();
+          if (mirrorOff) {
+            console.log('[HubMirror] DISABLED — set MEMORY_GRAPH_SYNC_HUB=1 (or unset it) to mirror outcome events to <hub>/a2a/memory/event.');
+          } else if (!hubUrl || !nodeId || !hasSecret) {
+            console.log(`[HubMirror] inactive — missing one of: hub=${hubUrl ? 'OK' : 'MISSING'} node_id=${nodeId ? 'OK' : 'MISSING'} secret=${hasSecret ? 'OK' : 'MISSING'}. Local memory graph is unaffected.`);
+          } else {
+            console.log(`[HubMirror] ENABLED — outcome/attempt/solidify/skill_emit events mirror to ${hubUrl}/a2a/memory/event as ${nodeId}. Set MEMORY_GRAPH_SYNC_HUB=0 to disable.`);
+          }
+        } catch (_mirrorDiagErr) { /* diagnostics must never block startup */ }
+
         const { getEvolutionDir, getEvolverLogPath } = require('./src/gep/paths');
         const solidifyStatePath = path.join(getEvolutionDir(), 'evolution_solidify_state.json');
         const cycleProgressPath = path.join(getEvolutionDir(), 'cycle_progress.json');
