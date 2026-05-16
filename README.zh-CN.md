@@ -198,7 +198,7 @@ evolver --loop
 - **自我修复引导**：从信号中生成面向修复的指令。
 - **[GEP 协议](https://evomap.ai/wiki)**：标准化进化流程与可复用资产，支持可审计与可共享。
 - **突变协议与人格进化**：每次进化必须显式声明 Mutation，并维护可进化的 PersonalityState。
-- **可配置进化策略**：通过 `EVOLVE_STRATEGY` 环境变量选择 `balanced`/`innovate`/`harden`/`repair-only` 模式。
+- **可配置进化策略**：通过 `EVOLVE_STRATEGY` 环境变量选择 `balanced`/`innovate`/`harden`/`repair-only`/`early-stabilize`/`steady-state` 模式，每个策略都同时分配 repair/optimize/innovate/explore 四类意图的比例。
 - **信号去重**：自动检测修复循环，防止反复修同一个问题。
 - **运维模块** (`src/ops/`)：6 个可移植的运维工具（生命周期管理、技能健康监控、磁盘清理、Git 自修复等），零平台依赖。
 - **源码保护**：防止自治代理覆写核心进化引擎源码。
@@ -235,17 +235,24 @@ evolver --loop
 
 ### 指定进化策略
 ```bash
-EVOLVE_STRATEGY=innovate evolver --loop   # 最大化创新
-EVOLVE_STRATEGY=harden evolver --loop     # 聚焦稳定性
-EVOLVE_STRATEGY=repair-only evolver --loop # 紧急修复模式
+EVOLVE_STRATEGY=innovate evolver --loop       # 最大化创新
+EVOLVE_STRATEGY=harden evolver --loop         # 聚焦稳定性
+EVOLVE_STRATEGY=repair-only evolver --loop    # 紧急修复模式
+EVOLVE_STRATEGY=steady-state evolver --loop   # 进化饱和后切换到探索为主
 ```
 
-| 策略 | 创新 | 优化 | 修复 | 适用场景 |
-| :--- | :--- | :--- | :--- | :--- |
-| `balanced`（默认） | 50% | 30% | 20% | 日常运行，稳步成长 |
-| `innovate` | 80% | 15% | 5% | 系统稳定，快速出新功能 |
-| `harden` | 20% | 40% | 40% | 大改动后，聚焦稳固 |
-| `repair-only` | 0% | 20% | 80% | 紧急状态，全力修复 |
+每个策略都会同时分配 4 类意图（**repair / optimize / innovate / explore**）的目标比例，并写入 GEP prompt 影响 LLM 选择：
+
+| 策略 | 修复 | 优化 | 创新 | 探索 | 适用场景 |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `balanced`（默认） | 20% | 20% | 50% | 10% | 日常运行，稳步成长 |
+| `innovate` | 5% | 10% | 80% | 5% | 系统稳定，快速出新功能 |
+| `harden` | 40% | 35% | 20% | 5% | 大改动后，聚焦稳固 |
+| `repair-only` | 80% | 18% | 0% | 2% | 紧急状态，全力修复 |
+| `early-stabilize` | 60% | 22% | 15% | 3% | 初期循环，先把存量问题压下去 |
+| `steady-state` | 55% | 25% | 5% | 15% | 进化饱和，少改动多探索新方向 |
+
+**意图说明**：`repair` 修复明确错误；`optimize` 优化既有路径；`innovate` 引入新能力 / 新技能；`explore` 不做侵入式改动，主动扫描代码库与外部知识，把发现的机会转写为新的信号或低风险 Capsule，为后续 innovate 储备题目。
 
 ### 运维管理（生命周期）
 ```bash
@@ -373,7 +380,7 @@ Evolver 能自动适应不同环境。
 
 | 变量 | 说明 | 默认值 |
 | :--- | :--- | :--- |
-| `EVOLVE_STRATEGY` | 进化策略预设（`balanced` / `innovate` / `harden` / `repair-only`） | `balanced` |
+| `EVOLVE_STRATEGY` | 进化策略预设（`balanced` / `innovate` / `harden` / `repair-only` / `early-stabilize` / `steady-state`） | `balanced` |
 | `A2A_HUB_URL` | [EvoMap Hub](https://evomap.ai) 地址 | _(未设置，离线模式)_ |
 | `A2A_NODE_ID` | 你在网络中的节点身份 | _(根据设备指纹自动生成)_ |
 | `HEARTBEAT_INTERVAL_MS` | Hub 心跳间隔 | `360000`（6 分钟） |

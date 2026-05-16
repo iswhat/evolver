@@ -1,0 +1,63 @@
+# Code owners for this repository
+# Format: each rule grants automatic review-request to the listed owner(s)
+# when a matching path is touched in a PR. Combined with branch protection's
+# "Require review from Code Owners" rule on main, these owners must approve
+# the PR before it can merge.
+#
+# Multiple owners on each line means GitHub will auto-request a review from
+# all listed owners on a matching PR; ANY one of them approving is sufficient
+# to satisfy the branch-protection 'require code owner review' gate. This is
+# the agreed fallback order: autogame-17 primary, forrestlinfeng + cloudcarver
+# as backups when the primary is unavailable.
+#
+# Why we need this: PR #34 (2026-05-10) was self-merged by the author 2 minutes
+# before a maintainer review comment landed, shipping a missing obfuscate
+# registration into main. CODEOWNERS + branch protection make that pattern
+# physically impossible.
+
+# Default: every file is owned by autogame-17 unless a more specific rule below
+# overrides it. Keeps coverage complete even for files we forget to call out.
+*                              @autogame-17 @forrestlinfeng @cloudcarver
+
+# High-risk paths -- listed explicitly so GitHub UI surfaces "Owner review
+# required" prominently when these are touched, even if the catch-all above
+# would already cover them. New contributors should treat any change here
+# as a multi-day review cycle.
+
+# GEP schemas (Gene / Capsule / Task / future). Validators and defaults must
+# stay in sync with hub-side expectations; shallow-copy bugs and validator-
+# wiring gaps in this directory have a track record (PR #25 / #27 / audit #30).
+/src/gep/schemas/              @autogame-17 @forrestlinfeng @cloudcarver
+
+# Pipeline modules. Module-load order vs dotenv is fragile here; refactors
+# in PR #20-#24 introduced multiple dotenv-ordering and missing-import
+# regressions before merge.
+/src/evolve/                   @autogame-17 @forrestlinfeng @cloudcarver
+
+# Content-addressable storage and integrity primitives. Any change here
+# changes asset_id semantics across all stored capsules.
+/src/gep/contentHash.js        @autogame-17 @forrestlinfeng @cloudcarver
+/src/gep/crypto.js             @autogame-17 @forrestlinfeng @cloudcarver
+/src/gep/integrityCheck.js     @autogame-17 @forrestlinfeng @cloudcarver
+/src/gep/shield.js             @autogame-17 @forrestlinfeng @cloudcarver
+/src/gep/hubVerify.js          @autogame-17 @forrestlinfeng @cloudcarver
+
+# Anything that touches secrets, sanitization, or proxy auth.
+/src/gep/sanitize.js           @autogame-17 @forrestlinfeng @cloudcarver
+/src/proxy/                    @autogame-17 @forrestlinfeng @cloudcarver
+
+# Public-mirror surface. Manifest mistakes leak source / runtime assets to
+# npm; build/publish scripts directly drive npm + GitHub Release.
+/public.manifest.json          @autogame-17 @forrestlinfeng @cloudcarver
+/scripts/build_public.js       @autogame-17 @forrestlinfeng @cloudcarver
+/scripts/publish_public.js     @autogame-17 @forrestlinfeng @cloudcarver
+/scripts/pre_publish_check.js  @autogame-17 @forrestlinfeng @cloudcarver
+/scripts/build_binaries.js     @autogame-17 @forrestlinfeng @cloudcarver
+/scripts/deploy.sh             @autogame-17 @forrestlinfeng @cloudcarver
+
+# Repo metadata that gates everything else.
+/.github/                      @autogame-17 @forrestlinfeng @cloudcarver
+/.cursor/                      @autogame-17 @forrestlinfeng @cloudcarver
+/CODEOWNERS                    @autogame-17 @forrestlinfeng @cloudcarver
+/package.json                  @autogame-17 @forrestlinfeng @cloudcarver
+/package-lock.json             @autogame-17 @forrestlinfeng @cloudcarver

@@ -272,15 +272,68 @@ function loadCapsules() {
   return Array.from(unique.values());
 }
 
+// Grow the tail chunk until it strictly contains the final newline-terminated
+// line, then JSON.parse it. A single event embeds the full ValidationReport
+// (up to ~4000 chars stdout + ~4000 chars stderr per command, plus blast
+// radius / metadata), so individual lines routinely exceed 4 KB and can reach
+// tens of KB. A fixed small chunk would either capture only the truncated
+// tail of that JSON line (parse error -> null -> broken parent/child event
+// chain) or still straddle the line boundary. Bugbot caught this on PR #34.
+const LAST_EVENT_INITIAL_CHUNK = 64 * 1024;
+const LAST_EVENT_MAX_CHUNK = 4 * 1024 * 1024;
+
 function getLastEventId() {
   try {
     const p = eventsPath();
     if (!fs.existsSync(p)) return null;
-    const raw = fs.readFileSync(p, 'utf8');
-    const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
-    if (lines.length === 0) return null;
-    const last = JSON.parse(lines[lines.length - 1]);
-    return last && typeof last.id === 'string' ? last.id : null;
+    const stat = fs.statSync(p);
+    if (stat.size === 0) return null;
+
+    const cap = Math.min(stat.size, LAST_EVENT_MAX_CHUNK);
+    let chunkSize = Math.min(stat.size, LAST_EVENT_INITIAL_CHUNK);
+
+    const fd = fs.openSync(p, 'r');
+    try {
+      while (true) {
+        const buf = Buffer.alloc(chunkSize);
+        const readPos = stat.size - chunkSize;
+        fs.readSync(fd, buf, 0, chunkSize, readPos);
+
+        // Drop the trailing newline(s) the writer appends so lastIndexOf('\n')
+        // points to the boundary BEFORE the final line, not at end-of-file.
+        const trimmedTail = buf.toString('utf8').replace(/\n+$/, '');
+        const lastNl = trimmedTail.lastIndexOf('\n');
+
+        // The chunk fully contains the last line when either we read from the
+        // start of the file, or we found a newline that bounds the line on
+        // the left. Otherwise the final line is bigger than the current chunk
+        // and we must grow.
+        if (readPos > 0 && lastNl < 0) {
+          if (chunkSize < cap) {
+            chunkSize = Math.min(cap, chunkSize * 2);
+            continue;
+          }
+          return null;
+        }
+
+        const lastLine = (lastNl >= 0 ? trimmedTail.slice(lastNl + 1) : trimmedTail).trim();
+        if (!lastLine) return null;
+
+        let last;
+        try {
+          last = JSON.parse(lastLine);
+        } catch (parseErr) {
+          if (chunkSize < cap) {
+            chunkSize = Math.min(cap, chunkSize * 2);
+            continue;
+          }
+          throw parseErr;
+        }
+        return last && typeof last.id === 'string' ? last.id : null;
+      }
+    } finally {
+      fs.closeSync(fd);
+    }
   } catch (e) {
     console.warn('[AssetStore] Failed to read last event ID:', e && e.message || e);
     return null;
@@ -540,4 +593,5 @@ module.exports = {
   genesSeedPath, ensureGenesSeeded,
   ensureAssetFiles, buildValidationCmd,
   withFileLock,
+  readJsonIfExists,
 };

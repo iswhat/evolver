@@ -394,6 +394,40 @@ describe('getLastEventId', () => {
     ]);
     assert.equal(getLastEventId(), 'evt_last');
   });
+
+  // Regression: PR #34 introduced a 4KB tail-read that silently returned null
+  // when the final event line exceeded the chunk (validation_report embeds up
+  // to ~8KB stdout+stderr per command). Without the fix this assertion fails
+  // and breaks the parent/child event chain.
+  it('handles a final event larger than the initial tail chunk (>64KB)', () => {
+    const { eventsPath, getLastEventId } = freshRequire();
+    const bigStdout = 'A'.repeat(4000);
+    const bigStderr = 'B'.repeat(4000);
+    const commands = [];
+    for (let i = 0; i < 16; i++) {
+      commands.push({ command: `cmd_${i}`, ok: true, stdout: bigStdout, stderr: bigStderr });
+    }
+    writeJsonl(eventsPath(), [
+      { type: 'EvolutionEvent', id: 'evt_first' },
+      {
+        type: 'EvolutionEvent',
+        id: 'evt_huge_last',
+        meta: { validation_report: { type: 'ValidationReport', commands } },
+      },
+    ]);
+    const stat = fs.statSync(eventsPath());
+    assert.ok(stat.size > 64 * 1024, 'fixture must exceed the initial 64KB chunk');
+    assert.equal(getLastEventId(), 'evt_huge_last');
+  });
+
+  it('returns the only line when the entire file is a single oversized event', () => {
+    const { eventsPath, getLastEventId } = freshRequire();
+    const huge = 'X'.repeat(80 * 1024);
+    writeJsonl(eventsPath(), [
+      { type: 'EvolutionEvent', id: 'evt_only', payload: huge },
+    ]);
+    assert.equal(getLastEventId(), 'evt_only');
+  });
 });
 
 describe('readRecentFailedCapsules', () => {

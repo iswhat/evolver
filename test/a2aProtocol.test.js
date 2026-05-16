@@ -21,6 +21,7 @@ const {
   unwrapAssetFromMessage,
   sendHeartbeat,
   hubOpenEventStream,
+  mergeAndCap,
 } = require('../src/gep/a2aProtocol');
 
 describe('protocol constants', () => {
@@ -343,5 +344,40 @@ describe('hubOpenEventStream', () => {
     assert.match(result.error, /eventsource_init_failed/);
     assert.match(result.error, /connection refused/);
     delete globalThis.EventSource;
+  });
+});
+
+describe('mergeAndCap', () => {
+  it('concatenates without dropping when total is under cap', () => {
+    var result = mergeAndCap([1, 2, 3], [4, 5], 10);
+    assert.deepEqual(result, [1, 2, 3, 4, 5]);
+  });
+
+  it('keeps exactly cap entries when total exceeds cap', () => {
+    var prev = Array.from({ length: 80 }, function (_, i) { return { id: i }; });
+    var incoming = Array.from({ length: 30 }, function (_, i) { return { id: 80 + i }; });
+    var result = mergeAndCap(prev, incoming, 100);
+    assert.equal(result.length, 100);
+  });
+
+  it('keeps the LAST (newest) entries, not the first', () => {
+    var prev = Array.from({ length: 80 }, function (_, i) { return { id: i }; });
+    var incoming = Array.from({ length: 30 }, function (_, i) { return { id: 80 + i }; });
+    var result = mergeAndCap(prev, incoming, 100);
+    // First 10 (oldest: id 0-9) should be dropped; last 100 start at id 10
+    assert.equal(result[0].id, 10);
+    assert.equal(result[99].id, 109);
+  });
+
+  it('simulates 5 successive merges of 30 entries and stays bounded at 100', () => {
+    var acc = [];
+    for (var round = 0; round < 5; round++) {
+      var batch = Array.from({ length: 30 }, function (_, i) { return { id: round * 30 + i }; });
+      acc = mergeAndCap(acc, batch, 100);
+    }
+    assert.equal(acc.length, 100);
+    // After 150 total entries, oldest 50 should be gone (id 0-49 dropped)
+    assert.equal(acc[0].id, 50);
+    assert.equal(acc[99].id, 149);
   });
 });
