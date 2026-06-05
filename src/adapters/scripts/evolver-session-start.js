@@ -199,14 +199,18 @@ function getDedupStatePath() {
   return path.join(dir, 'session-start-state.json');
 }
 
-// TTL throttle keyed by an arbitrary string, persisted in session-start-state
-// .json. Returns true if `key` fired within the last `ttlMs` (caller should
-// suppress); otherwise records "now" for `key` and returns false. Best-effort:
-// a state read/write failure just means no throttling (fail open). Shared by
-// the Kiro per-prompt dedup and the non-git notice so both age out of the same
-// file (entries older than 24h are pruned on write).
-function throttled(key, ttlMs) {
-  const statePath = getDedupStatePath();
+function getNoticeStatePath() {
+  const dir = process.env.EVOLVER_SESSION_STATE_DIR
+    || path.join(os.homedir(), '.evolver');
+  try { fs.mkdirSync(dir, { recursive: true }); } catch { /* ignore */ }
+  return path.join(dir, 'session-start-notice-state.json');
+}
+
+// TTL throttle keyed by an arbitrary string. Returns true if `key` fired within
+// the last `ttlMs` (caller should suppress); otherwise records "now" for `key`
+// and returns false. Best-effort: a state read/write failure just means no
+// throttling (fail open). Entries older than 24h are pruned on write.
+function throttled(key, ttlMs, statePath) {
   let state = {};
   try {
     if (fs.existsSync(statePath)) {
@@ -241,7 +245,7 @@ function shouldSkipInjection() {
   if (!dedupEnabled) return false;
 
   const ttlMs = Number(process.env.EVOLVER_SESSION_START_DEDUP_TTL_MS) || (30 * 60 * 1000);
-  return throttled(process.cwd(), ttlMs);
+  return throttled(process.cwd(), ttlMs, getDedupStatePath());
 }
 
 function main() {
@@ -256,7 +260,7 @@ function main() {
   // from git diffs), so tell the user — once per folder per TTL — instead of
   // failing silently. Emitted regardless of whether any memory exists below.
   const parts = [];
-  if (!isGitWorkspace(currentDir) && !throttled('nongit:' + currentDir, NON_GIT_NOTICE_TTL_MS)) {
+  if (!isGitWorkspace(currentDir) && !throttled('nongit:' + currentDir, NON_GIT_NOTICE_TTL_MS, getNoticeStatePath())) {
     parts.push(NON_GIT_NOTICE);
   }
 

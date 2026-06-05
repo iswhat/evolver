@@ -177,6 +177,26 @@ const SELF_PR_TIMEOUT_MS = envInt('EVOLVER_SELF_PR_TIMEOUT_MS', 30000);
 
 const LEAK_CHECK_MODE = envStr('EVOLVER_LEAK_CHECK', 'strict');
 
+// --- Reuse attribution (P4-a, Slice A) ---
+// Controls whether the evolver attaches a `reuse_attribution` block to the
+// synced `outcome` MemoryGraphEvent so the Hub can LATER (P4-a Slice B, gated +
+// team-signed-off) credit the SOURCE node when its asset is reused. Modes:
+//   off    (default) — attach nothing; byte-identical to pre-P4-a behavior.
+//   shadow           — attach the attribution block; it rides the existing
+//                      syncEventToHub -> /a2a/memory/event into the Hub's
+//                      MemoryGraphEvent.payload blob, which is GDI-inert and
+//                      read by NO payout path today.
+// There is intentionally NO `enforce` on the CLIENT: the evolver cannot move
+// money, so an enforce word would be a lie. The report stays economy-inert
+// until a SIGNED-OFF Hub reader converts it to credit (which MUST add the
+// anti-sybil gating — see P4-a Slice B). Until then it only emits honest,
+// runtime-observed attribution data (never agent-supplied identity).
+const REUSE_ATTRIBUTION_MODE = envStr('EVOLVER_REUSE_ATTRIBUTION', 'off');
+function reuseAttributionMode() {
+  const v = String(process.env.EVOLVER_REUSE_ATTRIBUTION || REUSE_ATTRIBUTION_MODE || 'off').toLowerCase().trim();
+  return v === 'shadow' ? 'shadow' : 'off';
+}
+
 // --- Validator mode (opt-out) ---
 // Node role: the evolver periodically fetches assigned validation tasks from
 // the Hub, runs the commands in an isolated sandbox, and submits
@@ -257,6 +277,9 @@ module.exports = {
   BLAST_RADIUS_HARD_CAP_LINES,
   // Security
   LEAK_CHECK_MODE,
+  // Reuse attribution (P4-a Slice A)
+  REUSE_ATTRIBUTION_MODE,
+  reuseAttributionMode,
   // Validator (opt-in role)
   VALIDATOR_ENABLED,
   VALIDATOR_STAKE_AMOUNT,

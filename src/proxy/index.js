@@ -15,6 +15,23 @@ const { SessionHandler } = require('./extensions/sessionHandler');
 // Lazy via paths.getEvomapPath() — honors EVOLVER_HOME (#114).
 function _defaultDataDir() { return getEvomapPath('mailbox'); }
 
+// The hub serves asset signal-search as `GET /a2a/assets/search` with query
+// params (signals, status, limit, fields, domain); `signals`/`fields` are
+// comma-separated lists. The proxy's public contract stays `POST /asset/search`
+// with a JSON body, so we translate that body into the hub's query string here.
+// Historically assetSearch forwarded as `POST /a2a/assets/search`, which the
+// current hub rejects with `route_not_found` (it only matches the GET form).
+function buildAssetSearchQuery(body = {}) {
+  const query = {};
+  const csv = (v) => (Array.isArray(v) ? v.join(',') : v);
+  if (body.signals != null) query.signals = csv(body.signals);
+  if (body.fields != null) query.fields = csv(body.fields);
+  if (body.status != null) query.status = body.status;
+  if (body.domain != null) query.domain = body.domain;
+  if (body.limit != null) query.limit = body.limit;
+  return query;
+}
+
 class EvoMapProxy {
   constructor(opts = {}) {
     this.hubUrl = (opts.hubUrl || process.env.A2A_HUB_URL || '').replace(/\/+$/, '');
@@ -86,7 +103,11 @@ class EvoMapProxy {
 
     const proxyHandlers = {
       assetFetch: (body) => this._proxyHttp('/a2a/fetch', body),
-      assetSearch: (body) => this._proxyHttp('/a2a/assets/search', body),
+      // GET (not POST): hub route is `GET /a2a/assets/search?signals=...`.
+      assetSearch: (body) => this._proxyHttp('/a2a/assets/search', null, {
+        method: 'GET',
+        query: buildAssetSearchQuery(body),
+      }),
       assetValidate: (body) => this._proxyHttp('/a2a/validate', body),
       // ATP passthrough (#460 Bug 2): merchant/consumer flows that used to call
       // hub directly via src/atp/hubClient.js must route through the proxy when

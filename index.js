@@ -1760,8 +1760,8 @@ async function main() {
       console.error('[exec] --max-cycles requires a value (e.g. --max-cycles 5 or --max-cycles=5)');
       process.exit(2);
     }
-    if (!['claude-code', 'openclaw'].includes(harness)) {
-      console.error(`[exec] unknown --harness '${harness}' (expected claude-code | openclaw)`);
+    if (!['claude-code', 'openclaw', 'codex', 'opencode'].includes(harness)) {
+      console.error(`[exec] unknown --harness '${harness}' (expected claude-code | openclaw | codex | opencode)`);
       process.exit(2);
     }
     try {
@@ -2763,8 +2763,153 @@ async function main() {
       process.exit(1);
     }
 
+  } else if (command === 'recipe') {
+    // recipe build  — assemble a DNA blueprint from owned Gene/Capsule assets
+    // recipe reuse  — fetch + express an existing recipe into an organism
+    const sub = args[1];
+    const {
+      getHubUrl, getNodeId, getHubNodeSecret, sendHelloToHub, rotateNodeSecret,
+      hubCreateRecipe, hubPublishRecipe, hubGetRecipe, hubExpressRecipe,
+    } = require('./src/gep/a2aProtocol');
+
+    const hubUrl = getHubUrl();
+    if (!hubUrl) {
+      console.error('[recipe] A2A_HUB_URL is not configured. Set A2A_HUB_URL (e.g. https://evomap.ai).');
+      process.exit(1);
+    }
+
+    function flagVal(name) {
+      const eq = args.find(a => typeof a === 'string' && a.startsWith('--' + name + '='));
+      return eq ? eq.split('=').slice(1).join('=') : null;
+    }
+    async function ensureRegistered(tag) {
+      if (!getHubNodeSecret()) {
+        console.log('[' + tag + '] No node_secret found. Registering with Hub...');
+        const hello = await sendHelloToHub();
+        if (!hello || !hello.ok) {
+          console.error('[' + tag + '] Failed to register with Hub:', (hello && hello.error) || 'unknown');
+          process.exit(1);
+        }
+        console.log('[' + tag + '] Registered as ' + getNodeId());
+      }
+    }
+    // True when the hub rejected our node_secret as stale/invalid — the one
+    // case where a rotate-and-retry is the documented recovery.
+    function isStaleSecret(result) {
+      if (!result || result.ok) return false;
+      if (result.status !== 401 && result.status !== 403) return false;
+      const e = String(result.error || '');
+      return e.includes('node_secret_invalid') || e.includes('node_secret_not_set');
+    }
+    // Run a hub call; if it fails because our node_secret is stale, rotate
+    // once and retry. Rotation only works when the CURRENT secret is still
+    // server-valid (the hub authenticates the rotate with it). If the secret
+    // has fully diverged from the server, rotation cannot recover it — that
+    // requires re-registering, so we surface the actionable recovery path
+    // instead of silently looping.
+    let _authRecoveryFailed = false;
+    async function callWithAuthRetry(tag, fn) {
+      let result = await fn();
+      if (isStaleSecret(result) && typeof rotateNodeSecret === 'function' && !_authRecoveryFailed) {
+        console.log('[' + tag + '] node_secret stale; rotating via /a2a/hello and retrying...');
+        const rot = await rotateNodeSecret();
+        if (rot && rot.ok) {
+          result = await fn();
+        } else {
+          _authRecoveryFailed = true;
+          console.error('[' + tag + '] Could not auto-rotate: the local node_secret has diverged from the Hub and can no longer authenticate a rotate.');
+          console.error('  Recover by either:');
+          console.error('    1. Reset Secret on the web (Account -> Reset Secret), then run: node index.js reset-local-secret');
+          console.error('    2. Or register a fresh node: set a new A2A_NODE_ID and retry (auto-provisions).');
+        }
+      }
+      return result;
+    }
+    function reportHubError(tag, result) {
+      console.error('[' + tag + '] Hub call failed' + (result.status ? ' (HTTP ' + result.status + ')' : '') + ': ' + (result.error || 'unknown'));
+      if (result.status === 401 || result.status === 403) console.error('  Auth failed. If this persists, delete ~/.evomap/node_secret and retry.');
+      else if (result.status === 402) console.error('  Insufficient credits. Check your balance at ' + hubUrl);
+    }
+
+    if (sub === 'build') {
+      // --genes=<asset_id,...> ordered; types resolved from the local asset store.
+      const genesArg = flagVal('genes');
+      const title = flagVal('title');
+      const description = flagVal('description');
+      const doPublish = args.includes('--publish');
+      if (!genesArg || !title) {
+        console.error('Usage: node index.js recipe build --title="..." --genes=<asset_id,...> [--description="..."] [--price=N] [--publish]');
+        console.error('  Builds a DRAFT recipe by default. --publish is opt-in and pushes it live.');
+        process.exit(1);
+      }
+      const { loadGenes, loadCapsules } = require('./src/gep/assetStore');
+      const typeById = new Map();
+      try {
+        for (const g of (loadGenes() || [])) if (g && g.asset_id) typeById.set(g.asset_id, 'Gene');
+        for (const c of (loadCapsules() || [])) if (c && c.asset_id) typeById.set(c.asset_id, 'Capsule');
+      } catch (e) { /* fall back to Gene below */ }
+
+      const ids = genesArg.split(',').map(s => s.trim()).filter(Boolean);
+      if (ids.length === 0) { console.error('[recipe build] --genes is empty.'); process.exit(1); }
+      if (ids.length > 20) { console.error('[recipe build] at most 20 steps per recipe.'); process.exit(1); }
+      const steps = ids.map((asset_id, i) => ({
+        asset_id,
+        asset_type: typeById.get(asset_id) || 'Gene',
+        position: i,
+      }));
+
+      await ensureRegistered('recipe build');
+      const priceVal = flagVal('price');
+      const createRes = await callWithAuthRetry('recipe build', () => hubCreateRecipe({
+        title, steps, description: description || undefined,
+        pricePerExecution: priceVal ? Number(priceVal) : undefined,
+      }));
+      if (!createRes.ok) { reportHubError('recipe build', createRes); process.exit(1); }
+      const recipe = (createRes.data && (createRes.data.recipe || createRes.data)) || {};
+      const recipeId = recipe.id;
+      console.log('[recipe build] Created DRAFT recipe ' + recipeId + ' ("' + title + '", ' + steps.length + ' steps).');
+
+      if (doPublish && recipeId) {
+        const pubRes = await callWithAuthRetry('recipe build', () => hubPublishRecipe(recipeId));
+        if (!pubRes.ok) { reportHubError('recipe build', pubRes); process.exit(1); }
+        console.log('[recipe build] Published recipe ' + recipeId + ' to the marketplace.');
+      } else if (!doPublish) {
+        console.log('[recipe build] Left as draft. Re-run with --publish to make it live.');
+      }
+      process.exit(0);
+    } else if (sub === 'reuse') {
+      const recipeId = flagVal('id') || (args[2] && !String(args[2]).startsWith('-') ? args[2] : null);
+      if (!recipeId) {
+        console.error('Usage: node index.js recipe reuse --id=<recipe_id> [--input=<json>]');
+        process.exit(1);
+      }
+      await ensureRegistered('recipe reuse');
+      const getRes = await hubGetRecipe(recipeId);
+      if (!getRes.ok) { reportHubError('recipe reuse', getRes); process.exit(1); }
+      let inputPayload = {};
+      const inputArg = flagVal('input');
+      if (inputArg) {
+        try { inputPayload = JSON.parse(inputArg); }
+        catch (e) { console.error('[recipe reuse] --input must be valid JSON.'); process.exit(1); }
+      }
+      const expRes = await callWithAuthRetry('recipe reuse', () => hubExpressRecipe(recipeId, inputPayload));
+      if (!expRes.ok) { reportHubError('recipe reuse', expRes); process.exit(1); }
+      console.log('[recipe reuse] Expressed recipe ' + recipeId + '.');
+      if (isVerbose) console.log(JSON.stringify(expRes.data, null, 2));
+      process.exit(0);
+    } else {
+      console.error('Usage: node index.js recipe <build|reuse> [flags]');
+      console.error('  build --title="..." --genes=<asset_id,...> [--publish]   (draft unless --publish)');
+      console.error('  reuse --id=<recipe_id> [--input=<json>]');
+      process.exit(1);
+    }
+
   } else {
-    console.log(`Usage: node index.js [run|/evolve|solidify|review|distill|fetch|sync|asset-log|webui|setup-hooks|buy|orders|verify|atp|atp-complete] [--loop]
+    console.log(`Usage: node index.js [run|/evolve|solidify|review|distill|fetch|sync|asset-log|webui|setup-hooks|recipe|buy|orders|verify|atp|atp-complete] [--loop]
+  - recipe flags:
+    - build --title="..." --genes=<asset_id,...> [--description] [--price=N] [--publish]
+                              (builds a DRAFT DNA blueprint; --publish is opt-in)
+    - reuse --id=<recipe_id> [--input=<json>]   (express a recipe into an organism)
   - fetch flags:
     - --skill=<id> | -s <id>   (skill ID to download)
     - --out=<dir>              (output directory, default: ./skills/<skill_id>)

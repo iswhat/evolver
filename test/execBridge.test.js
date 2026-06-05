@@ -35,7 +35,11 @@ let tmpRoot, prevEnv;
 const ENV_KEYS = [
   'EVOLVE_HAND_TIMEOUT_MS', 'EVOLVE_BRAIN_TIMEOUT_MS', 'EVOLVE_HAND_KILL_GRACE_MS',
   'EVOLVE_HAND_MAX_RETRIES', 'EVOLVE_HAND_RETRY_BACKOFF_SECONDS', 'EVOLVE_IDLE_SLEEP_MS',
+  'EVOLVE_HAND_MAX_BUF_BYTES', 'EVOLVE_HAND_QUIET',
   'EVOLVER_REPO_ROOT', 'CLAUDE_BIN', 'EVOLVE_EXEC_FALLBACKS',
+  // P4-b
+  'EVOLVE_OPENCODE_DANGEROUS', 'EVOLVE_HAND_DANGEROUS', 'EVOLVE_HAND_MODEL',
+  'EVOLVE_SOLIDIFY_STATE_DIR', 'MEMORY_DIR', 'EVOLUTION_DIR',
 ];
 
 beforeEach(() => {
@@ -75,18 +79,19 @@ describe('runChild — timeout & process safety', () => {
   it('buffer cap holds even when a single chunk exceeds it (Bugbot #179)', async () => {
     // child emits one ~600KB chunk in a single write; cap is 64KB.
     process.env.EVOLVE_HAND_MAX_BUF_BYTES = String(64 * 1024);
+    process.env.EVOLVE_HAND_QUIET = 'true';
     const big = (bin, args, opts) => spawn(process.execPath, ['-e',
-      "process.stdout.write('X'.repeat(600*1024)); process.exit(0);"], { ...opts });
+      "process.stdout.write('X'.repeat(600*1024), () => process.exit(0));"], { ...opts });
     const r = await eb.runChild(big, 'node', ['-e', ''], { env: process.env, timeoutMs: 8000, label: 'Hand' });
     assert.ok(r.stdout.length <= 64 * 1024, `stdout retained ${r.stdout.length} > cap`);
     assert.equal(r.truncated, true);
-    delete process.env.EVOLVE_HAND_MAX_BUF_BYTES;
   });
 
   it('head buffer mode keeps the early sessions_spawn line under flood (Bugbot #179 r2)', async () => {
     // Brain prints the spawn line FIRST, then floods >cap of prompt logging.
     // head mode must retain the spawn line; tail mode would drop it.
     process.env.EVOLVE_HAND_MAX_BUF_BYTES = String(32 * 1024);
+    process.env.EVOLVE_HAND_QUIET = 'true';
     const line = require('../src/gep/bridge').renderSessionsSpawnCall({ task: 'T', agentId: 'main', label: 'gep_head' });
     const code = `process.stdout.write(${JSON.stringify(line + '\n')}); process.stdout.write('Z'.repeat(200*1024)); process.exit(0);`;
     const brainish = (bin, args, opts) => spawn(process.execPath, ['-e', code], { ...opts });
@@ -95,7 +100,6 @@ describe('runChild — timeout & process safety', () => {
     assert.ok(r.truncated, 'truncation happened');
     const parsed = require('../src/gep/bridge').parseFirstSpawnCall(r.stdout);
     assert.ok(parsed && parsed.label === 'gep_head', 'spawn line survived the flood in head mode');
-    delete process.env.EVOLVE_HAND_MAX_BUF_BYTES;
   });
 
   it('EVOLVE_HAND_QUIET=true mutes mirroring but still captures the buffer (#179 r6)', async () => {
@@ -199,6 +203,92 @@ describe('evaluateStatusGate', () => {
     const g = eb.evaluateStatusGate(mk({ r: { code: null, stdout: '', stderr: '', timedOut: false, spawnError: 'ENOENT' } }));
     assert.equal(g.ok, false); assert.equal(g.kind, 'spawn_error');
   });
+
+  // --- P4-b: solidifyProof:'state' (codex/opencode) — gate keys on the evolver-
+  // written evolution_solidify_state.json instead of the stdout marker. paths.js
+  // resolves getEvolutionDir() under tmpRoot via EVOLVER_REPO_ROOT (set in beforeEach). ---
+  const stateDir = () => { delete require.cache[require.resolve('../src/gep/paths')]; return require('../src/gep/paths').getEvolutionDir(); };
+  const writeState = (over) => {
+    const dir = stateDir();
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'evolution_solidify_state.json'),
+      JSON.stringify({ last_solidify: { run_id: 'r', at: new Date().toISOString(), outcome: { status: 'success', score: 1 }, ...over } }));
+  };
+
+  it("state proof: fresh success state + status:'success' + NO stdout marker -> ok", () => {
+    const attemptStartMs = Date.now() - 1000;
+    writeState();
+    const sf = path.join(tmpRoot, 'st.json'); fs.writeFileSync(sf, JSON.stringify({ result: 'success' }));
+    const g = eb.evaluateStatusGate({ r: { code: 0, stdout: '{"type":"message"}', stderr: 'codex banner', timedOut: false }, statusFile: sf, cycleStartMs: attemptStartMs, attemptStartMs, solidifyProof: 'state' });
+    assert.equal(g.ok, true); assert.equal(g.kind, 'success');
+  });
+  it('state proof: STALE state (at < attemptStartMs) -> no_solidify_marker', () => {
+    const dir = stateDir(); fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'evolution_solidify_state.json'),
+      JSON.stringify({ last_solidify: { at: new Date(Date.now() - 60000).toISOString(), outcome: { status: 'success' } } }));
+    const sf = path.join(tmpRoot, 'st.json'); fs.writeFileSync(sf, JSON.stringify({ result: 'success' }));
+    const g = eb.evaluateStatusGate({ r: { code: 0, stdout: '', stderr: '', timedOut: false }, statusFile: sf, cycleStartMs: Date.now(), attemptStartMs: Date.now(), solidifyProof: 'state' });
+    assert.equal(g.ok, false); assert.equal(g.kind, 'no_solidify_marker');
+  });
+  it('state proof: success state WITH skip_reason (PR-overlap rollback) -> NOT success', () => {
+    const attemptStartMs = Date.now() - 1000;
+    writeState({ outcome: { status: 'success', skip_reason: 'open_pr_overlap' } });
+    const sf = path.join(tmpRoot, 'st.json'); fs.writeFileSync(sf, JSON.stringify({ result: 'success' }));
+    const g = eb.evaluateStatusGate({ r: { code: 0, stdout: '', stderr: '', timedOut: false }, statusFile: sf, cycleStartMs: attemptStartMs, attemptStartMs, solidifyProof: 'state' });
+    assert.equal(g.ok, false); assert.equal(g.kind, 'no_solidify_marker');
+  });
+  it('state proof: absent state file -> no_solidify_marker', () => {
+    const sf = path.join(tmpRoot, 'st.json'); fs.writeFileSync(sf, JSON.stringify({ result: 'success' }));
+    const g = eb.evaluateStatusGate({ r: { code: 0, stdout: '', stderr: '', timedOut: false }, statusFile: sf, cycleStartMs: Date.now(), attemptStartMs: Date.now(), solidifyProof: 'state' });
+    assert.equal(g.ok, false); assert.equal(g.kind, 'no_solidify_marker');
+  });
+  it('Fallback B (EVOLVE_EXEC_FALLBACKS): rejects a fresh success state WITH skip_reason (Bugbot #184)', () => {
+    // Fallback B must apply the SAME criteria as the primary state proof — a
+    // PR-overlap rollback (status:'success'+skip_reason) the primary gate rejects
+    // must NOT slip through as success_fallback_b.
+    process.env.EVOLVE_EXEC_FALLBACKS = 'true';
+    try {
+      const attemptStartMs = Date.now() - 1000;
+      writeState({ outcome: { status: 'success', skip_reason: 'open_pr_overlap' } });
+      // No status file + no stdout marker -> primary gate fails; only Fallback B could pass.
+      const g = eb.evaluateStatusGate({ r: { code: 0, stdout: 'done', stderr: '', timedOut: false }, statusFile: path.join(tmpRoot, 'none.json'), cycleStartMs: attemptStartMs, attemptStartMs });
+      assert.notEqual(g.kind, 'success_fallback_b', 'rollback w/ skip_reason must not pass Fallback B');
+      assert.equal(g.ok, false);
+    } finally { delete process.env.EVOLVE_EXEC_FALLBACKS; }
+  });
+  it('Fallback A is SKIPPED for solidifyProof:state — stdout marker alone cannot pass codex/opencode (Bugbot #184)', () => {
+    // codex/opencode distrust the stdout marker; Fallback A must not re-introduce
+    // it. With a [SOLIDIFY] SUCCESS marker but NO fresh state file, a 'state'
+    // harness must NOT close as success_fallback_a (nor _b).
+    process.env.EVOLVE_EXEC_FALLBACKS = 'true';
+    try {
+      const g = eb.evaluateStatusGate({ r: { code: 0, stdout: '[SOLIDIFY] SUCCESS\n{"type":"EvolutionEvent"}\n{"type":"Capsule"}', stderr: '', timedOut: false }, statusFile: path.join(tmpRoot, 'none.json'), cycleStartMs: Date.now(), attemptStartMs: Date.now(), solidifyProof: 'state' });
+      assert.notEqual(g.kind, 'success_fallback_a', 'stdout marker must not pass Fallback A for state harnesses');
+      assert.equal(g.ok, false);
+    } finally { delete process.env.EVOLVE_EXEC_FALLBACKS; }
+  });
+  it('Fallback A STILL works for claude-code (stdout marker, solidifyProof omitted) (regression)', () => {
+    process.env.EVOLVE_EXEC_FALLBACKS = 'true';
+    try {
+      const g = eb.evaluateStatusGate({ r: { code: 0, stdout: '[SOLIDIFY] SUCCESS', stderr: '', timedOut: false }, statusFile: path.join(tmpRoot, 'fa.json'), cycleStartMs: Date.now(), attemptStartMs: Date.now() });
+      assert.equal(g.ok, true); assert.equal(g.kind, 'success_fallback_a');
+    } finally { delete process.env.EVOLVE_EXEC_FALLBACKS; }
+  });
+  it('Fallback B (EVOLVE_EXEC_FALLBACKS): accepts a clean fresh success state (no skip_reason)', () => {
+    process.env.EVOLVE_EXEC_FALLBACKS = 'true';
+    try {
+      const attemptStartMs = Date.now() - 1000;
+      writeState(); // clean success, fresh
+      const g = eb.evaluateStatusGate({ r: { code: 0, stdout: 'done', stderr: '', timedOut: false }, statusFile: path.join(tmpRoot, 'none.json'), cycleStartMs: attemptStartMs, attemptStartMs });
+      assert.equal(g.ok, true); assert.equal(g.kind, 'success_fallback_b');
+    } finally { delete process.env.EVOLVE_EXEC_FALLBACKS; }
+  });
+  it("REGRESSION: claude-code (solidifyProof omitted) STILL keys on the stdout marker, NOT state", () => {
+    // a stale/absent state must not matter; the stdout marker drives claude success.
+    const sf = path.join(tmpRoot, 'st.json'); fs.writeFileSync(sf, JSON.stringify({ result: 'success' }));
+    const g = eb.evaluateStatusGate({ r: { code: 0, stdout: '[SOLIDIFY] SUCCESS', stderr: '', timedOut: false }, statusFile: sf, cycleStartMs: Date.now() });
+    assert.equal(g.ok, true); assert.equal(g.kind, 'success');
+  });
 });
 
 describe('tryParseClaudeResult — M5 (last result line, not substring)', () => {
@@ -236,6 +326,49 @@ describe('RECIPES.buildArgs contract', () => {
     const built = eb.RECIPES['openclaw'].buildArgs({ sessionId: 'sid', statusFile: '/s.json', cycleTag: '0001', taskText: 'TASKBODY' });
     assert.equal(eb.RECIPES['openclaw'].deliversTaskVia, 'argv');
     assert.ok(built.args.includes('-m') && built.args.includes('TASKBODY'));
+  });
+
+  // --- P4-b: codex ---
+  it('codex: stdin delivery, workspace-write sandbox, state proof, add-dir, no task in argv', () => {
+    const built = eb.RECIPES['codex'].buildArgs({ statusFile: '/s.json', cycleTag: '0001', taskText: 'apply the patch' });
+    assert.equal(eb.RECIPES['codex'].deliversTaskVia, 'stdin');
+    assert.equal(eb.RECIPES['codex'].solidifyProof, 'state');
+    assert.equal(built.args[0], 'exec');
+    const i = built.args.indexOf('-s');
+    assert.ok(i >= 0 && built.args[i + 1] === 'workspace-write', '-s workspace-write by default');
+    assert.ok(built.args.includes('-c') && built.args.includes('approval_policy=never'));
+    assert.ok(built.args.includes('-C'), '-C working root');
+    assert.ok(built.args.includes('--add-dir'), '--add-dir getEvolutionDir() (unconditional)');
+    assert.ok(built.args.includes('--skip-git-repo-check') && built.args.includes('--ephemeral'));
+    assert.ok(!built.args.includes('--session-id'), 'codex has no --session-id');
+    assert.ok(!built.args.includes('--dangerously-bypass-approvals-and-sandbox'), 'not bypass by default');
+    assert.ok(!built.args.join(' ').includes('apply the patch'), 'task NOT in argv for stdin recipe');
+  });
+  it('codex: EVOLVE_HAND_DANGEROUS=true escalates to danger-full-access', () => {
+    process.env.EVOLVE_HAND_DANGEROUS = 'true';
+    const built = eb.RECIPES['codex'].buildArgs({ statusFile: '/s.json', cycleTag: '0001' });
+    const i = built.args.indexOf('-s');
+    assert.equal(built.args[i + 1], 'danger-full-access');
+  });
+  it('codex: -m only forwarded when EVOLVE_HAND_MODEL is set', () => {
+    const noModel = eb.RECIPES['codex'].buildArgs({ statusFile: '/s.json', cycleTag: '0001' });
+    assert.ok(!noModel.args.includes('-m'), 'no -m without EVOLVE_HAND_MODEL');
+    process.env.EVOLVE_HAND_MODEL = 'gpt-5-codex';
+    const withModel = eb.RECIPES['codex'].buildArgs({ statusFile: '/s.json', cycleTag: '0001' });
+    assert.ok(withModel.args.includes('-m') && withModel.args.includes('gpt-5-codex'));
+  });
+
+  // --- P4-b: opencode ---
+  it('opencode: argv delivery, taskText last after --, skip-permissions, state proof, no --format', () => {
+    const built = eb.RECIPES['opencode'].buildArgs({ statusFile: '/s.json', cycleTag: '0001', taskText: 'TASKBODY-oc' });
+    assert.equal(eb.RECIPES['opencode'].deliversTaskVia, 'argv');
+    assert.equal(eb.RECIPES['opencode'].solidifyProof, 'state');
+    assert.equal(built.args[0], 'run');
+    assert.equal(built.args[built.args.length - 1], 'TASKBODY-oc', 'task is the LAST argv element');
+    assert.equal(built.args[built.args.length - 2], '--', '-- guards a leading-dash task');
+    assert.ok(built.args.includes('--dangerously-skip-permissions'));
+    assert.ok(built.args.includes('--dir'));
+    assert.ok(!built.args.includes('--format'), 'no --format json (default relays to stdout)');
   });
 });
 
@@ -323,6 +456,54 @@ describe('runExecBridge loop', () => {
     const res = await eb.runExecBridge({ harness: 'claude-code', maxCycles: 2, spawnFn });
     assert.equal(res.cycles, 2);
     assert.equal(res.lastOutcome, 'hand_failed', 'last cycle failure wins; earlier success must not mask it');
+  });
+
+  // --- P4-b loop tests ---
+  it('opencode: refuses FAIL-FAST without EVOLVE_OPENCODE_DANGEROUS, before any Brain run', async () => {
+    delete process.env.EVOLVE_OPENCODE_DANGEROUS;
+    const calls = [];
+    const spawnFn = makeSpawnFn({ handMode: 'state_proof_success', calls });
+    await assert.rejects(
+      () => eb.runExecBridge({ harness: 'opencode', once: true, spawnFn }),
+      /EVOLVE_OPENCODE_DANGEROUS/,
+    );
+    assert.equal(calls.length, 0, 'must refuse BEFORE spawning the Brain (no wasted cycle)');
+  });
+
+  it("codex: cycle closes on solidifyProof:'state' with NO stdout marker", async () => {
+    process.env.EVOLVE_HAND_TIMEOUT_MS = '8000';
+    process.env.EVOLVE_HAND_MAX_RETRIES = '3';
+    // the fake codex Hand writes the solidify state under getEvolutionDir()
+    delete require.cache[require.resolve('../src/gep/paths')];
+    process.env.EVOLVE_SOLIDIFY_STATE_DIR = require('../src/gep/paths').getEvolutionDir();
+    const calls = [];
+    const spawnFn = makeSpawnFn({ handMode: 'state_proof_success', calls });
+    const res = await eb.runExecBridge({ harness: 'codex', once: true, spawnFn });
+    assert.equal(res.lastOutcome, 'success', 'state proof closes the cycle without a stdout marker');
+    assert.equal(calls.filter((c) => !c.isBrain).length, 1, 'one Hand spawn, stopped after success');
+  });
+
+  it('codex: NO state file written -> hand_failed (state proof is not weakened)', async () => {
+    process.env.EVOLVE_HAND_TIMEOUT_MS = '8000';
+    process.env.EVOLVE_HAND_MAX_RETRIES = '1';
+    delete process.env.EVOLVE_SOLIDIFY_STATE_DIR; // fake Hand writes status but NOT state
+    const calls = [];
+    const spawnFn = makeSpawnFn({ handMode: 'state_proof_success', calls });
+    const res = await eb.runExecBridge({ harness: 'codex', once: true, spawnFn });
+    assert.equal(res.lastOutcome, 'hand_failed', 'no fresh solidify state => not a success');
+  });
+
+  it('opencode: with EVOLVE_OPENCODE_DANGEROUS=true, cycle closes on state proof', async () => {
+    process.env.EVOLVE_HAND_TIMEOUT_MS = '8000';
+    process.env.EVOLVE_HAND_MAX_RETRIES = '3';
+    process.env.EVOLVE_OPENCODE_DANGEROUS = 'true';
+    delete require.cache[require.resolve('../src/gep/paths')];
+    process.env.EVOLVE_SOLIDIFY_STATE_DIR = require('../src/gep/paths').getEvolutionDir();
+    const calls = [];
+    const spawnFn = makeSpawnFn({ handMode: 'state_proof_success', calls });
+    const res = await eb.runExecBridge({ harness: 'opencode', once: true, spawnFn });
+    assert.equal(res.lastOutcome, 'success');
+    assert.equal(calls.filter((c) => !c.isBrain).length, 1);
   });
 });
 

@@ -206,7 +206,7 @@ describe('loop-mode EVOLVE_BRIDGE default (issue #96)', () => {
   // EvolutionEvents on Aurora over 33 days because every cycle hit
   // rejectPendingRun(reason=loop_bridge_disabled_autoreject_no_rollback).
   // These tests verify the default flip and the safety banner.
-  const { execFileSync } = require('child_process');
+  const { execFileSync, spawnSync } = require('child_process');
   const repoRoot = path.resolve(__dirname, '..');
 
   // Use the test-scoped tmpDir as REPO_ROOT so a leftover `.evolver.lock`
@@ -224,31 +224,24 @@ describe('loop-mode EVOLVE_BRIDGE default (issue #96)', () => {
 
   function runDaemonOnce(extraEnv) {
     ensureGitRepo(tmpDir);
-    let out = '';
-    let err = '';
-    try {
-      const result = execFileSync(process.execPath, [path.join(repoRoot, 'index.js'), '--loop'], {
-        cwd: tmpDir,
-        encoding: 'utf8',
-        timeout: 30000,
-        env: {
-          ...process.env,
-          EVOLVE_LOOP: 'true',
-          A2A_HUB_URL: '',
-          EVOLVER_REPO_ROOT: tmpDir,
-          // Isolate the singleton pid-file in tmpDir so concurrent tests (and
-          // a real daemon at the dev repo) do not block this spawn.
-          EVOLVER_LOCK_DIR: tmpDir,
-          EVOLVER_MAX_CYCLES_PER_PROCESS: '1',
-          ...extraEnv,
-        },
-      });
-      out = result;
-    } catch (e) {
-      out = e.stdout || '';
-      err = e.stderr || '';
-    }
-    return out + err;
+    const result = spawnSync(process.execPath, [path.join(repoRoot, 'index.js'), '--loop'], {
+      cwd: tmpDir,
+      encoding: 'utf8',
+      timeout: 30000,
+      env: {
+        ...process.env,
+        EVOLVE_LOOP: 'true',
+        A2A_HUB_URL: '',
+        EVOLVER_REPO_ROOT: tmpDir,
+        EVOLVER_CAFFEINATE: '0',
+        // Isolate the singleton pid-file in tmpDir so concurrent tests (and
+        // a real daemon at the dev repo) do not block this spawn.
+        EVOLVER_LOCK_DIR: tmpDir,
+        EVOLVER_MAX_CYCLES_PER_PROCESS: '1',
+        ...extraEnv,
+      },
+    });
+    return (result.stdout || '') + (result.stderr || '');
   }
 
   it('--loop with EVOLVE_BRIDGE unset defaults to bridge=true', () => {

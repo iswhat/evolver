@@ -20,6 +20,24 @@ function buildClaudeHooks(evolverRoot) {
           ],
         },
       ],
+      UserPromptSubmit: [
+        {
+          hooks: [
+            {
+              type: 'command',
+              // Runtime asset injection (P4-c). DEFAULT off (EVOLVER_RECALL_MODE
+              // unset/off -> emits {} without reading the prompt). The script
+              // owns an absolute 3.3s watchdog that always exits 0 with valid
+              // JSON (fail-open); this host timeout (5s) is a strict backstop
+              // ABOVE that watchdog, so the host never kills the script
+              // mid-write. A stuck/slow recall can never block or erase the
+              // user's prompt.
+              command: `node ${scriptsBase}/evolver-task-recall.js`,
+              timeout: 5,
+            },
+          ],
+        },
+      ],
       PostToolUse: [
         {
           matcher: 'Write',
@@ -55,6 +73,8 @@ This project uses evolver for self-evolution. Hooks automatically:
 1. Inject recent evolution memory at session start
 2. Detect evolution signals during file edits
 3. Record outcomes at session end
+4. (Opt-in) Surface matching distilled capabilities for each prompt — set
+   \`EVOLVER_RECALL_MODE=shadow\` to preview, \`enforce\` to inject (default off).
 
 For substantive tasks, call \`gep_recall\` before work and \`gep_record_outcome\` after.
 Signals: log_error, perf_bottleneck, user_feature_request, capability_gap, deployment_issue, test_failure.`;
@@ -126,7 +146,7 @@ function uninstall({ configRoot }) {
                 const innerBefore = matcher.hooks.length;
                 const filtered = matcher.hooks.filter(h => {
                   const cmd = (h && h.command) || '';
-                  return !cmd.includes('evolver-session') && !cmd.includes('evolver-signal');
+                  return !cmd.includes('evolver-session') && !cmd.includes('evolver-signal') && !cmd.includes('evolver-task-recall');
                 });
                 // A matcher containing both evolver and user hooks shrinks
                 // its inner array without changing the outer matcher count.

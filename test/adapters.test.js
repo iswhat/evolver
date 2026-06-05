@@ -140,13 +140,13 @@ describe('hookAdapter', () => {
         const destDir = path.join(tmp, 'hooks');
         const evolverRoot = path.resolve(__dirname, '..');
         const copied = hookAdapter.copyHookScripts(destDir, path.join(evolverRoot, 'src', 'adapters'));
-        // 3 hook entry points + 2 helpers (`_runtimePaths.js`,
-        // `_memoryFiltering.js`) required by them via `require('./...')`.
-        // Helper list is verified separately by the "#547 — setup-hooks
-        // copies every helper required by the entry-point scripts" suite,
-        // which scans the actual `require` statements; this assertion is
-        // just a quick smoke test on count.
-        assert.equal(copied.length, 5);
+        // 4 hook entry points (session-start, signal-detect, session-end,
+        // task-recall) + 2 helpers (`_runtimePaths.js`, `_memoryFiltering.js`)
+        // required by them via `require('./...')`. Helper list is verified
+        // separately by the "#547 — setup-hooks copies every helper required by
+        // the entry-point scripts" suite, which scans the actual `require`
+        // statements; this assertion is just a quick smoke test on count.
+        assert.equal(copied.length, 6);
         for (const f of copied) {
           assert.ok(fs.existsSync(f));
         }
@@ -171,6 +171,35 @@ describe('hookAdapter', () => {
         });
         assert.equal(result.status, 0,
           `copied evolver-session-start.js must run without error. stderr=${result.stderr}`);
+      } finally { cleanup(tmp); }
+    });
+
+    it('copied evolver-task-recall.js runs fail-open (exit 0 + parseable {}) with mode=off', () => {
+      // The require-scanner suite only verifies same-dir `./_helper` requires;
+      // evolver-task-recall.js resolves its core via an ABSOLUTE require
+      // (findEvolverRoot()+src/gep/recallInject.js), which that scanner cannot
+      // cover. This e2e proves the copied hook (a) parses its stdin, (b) never
+      // crashes, and (c) emits exactly one JSON object — the hook contract.
+      const tmp = makeTmpDir();
+      try {
+        const destDir = path.join(tmp, 'hooks');
+        const evolverRoot = path.resolve(__dirname, '..');
+        hookAdapter.copyHookScripts(destDir, path.join(evolverRoot, 'src', 'adapters'));
+        assert.ok(fs.existsSync(path.join(destDir, 'evolver-task-recall.js')),
+          'evolver-task-recall.js must be copied by setup-hooks');
+
+        const { spawnSync } = require('child_process');
+        const result = spawnSync('node', [path.join(destDir, 'evolver-task-recall.js')], {
+          input: JSON.stringify({ prompt: 'add retry with backoff to the http client', session_id: 'sess-test' }),
+          encoding: 'utf8',
+          timeout: 8000,
+          // mode=off: must finish {} without parsing/sending the prompt.
+          env: { ...process.env, EVOLVER_RECALL_MODE: 'off', A2A_HUB_URL: '' },
+        });
+        assert.equal(result.status, 0,
+          `copied evolver-task-recall.js must exit 0 (fail-open). stderr=${result.stderr}`);
+        const parsed = JSON.parse(result.stdout || '{}');
+        assert.deepEqual(parsed, {}, 'mode=off must inject nothing (empty object)');
       } finally { cleanup(tmp); }
     });
   });

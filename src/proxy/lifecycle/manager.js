@@ -6,6 +6,23 @@ const { PROXY_PROTOCOL_VERSION } = require('../mailbox/store');
 const crypto = require('crypto');
 const { hubFetch } = require('../../gep/hubFetch');
 const { getEvomapPath } = require('../../gep/paths');
+// last_update transit (PR #188): proxy heartbeat ferries a pending
+// force_update outcome to the hub, then clears the state file on 2xx.
+// Proxy DOES run the upgrade now (PR #188 follow-up, HIGH bug): the
+// original comment "Proxy itself never runs the upgrade — telemetry-only
+// here" reflected pre-fix behaviour. Pure proxy-mode nodes (EVOMAP_PROXY=1,
+// no evolve loop) never traversed a2aProtocol.js sendHeartbeat, so the
+// canonical `_maybeTriggerForceUpdateFromHeartbeat` block at
+// a2aProtocol.js:2304 never fired for them — Hub could push force_update
+// forever with no upgrade attempt and no EvolverUpgradeAttempt row. The
+// proxy heartbeat (200 with force_update, AND 426 with force_update in the
+// error envelope) must mirror that logic. reportForceUpdateOutcome writes
+// the state file the next heartbeat will pick up via body.last_update.
+const {
+  readPendingLastUpdate,
+  clearLastUpdateOnAck,
+  reportForceUpdateOutcome,
+} = require('../../gep/a2aProtocol');
 
 // Hub's nodeId regex; mirror of src/gep/a2aProtocol.js so a malformed
 // legacy file can never feed garbage into the hello payload.
@@ -46,6 +63,28 @@ const REAUTH_BACKOFF_MAX_MS = 4 * 60 * 60_000;
 const DRIFT_CHECK_MS = 30 * 1000;
 const DRIFT_SLEEP_THRESHOLD_MS = 90 * 1000;
 const DRIFT_LONG_SLEEP_THRESHOLD_MS = 30 * 60_000;
+
+// Heartbeat-driven force_update lifecycle tracking. Mirrors
+// `_forceUpdateInFlight` / `_forceUpdateLastAttemptAt` /
+// `_getForceUpdateRetryCooldownMs` in src/gep/a2aProtocol.js so the proxy
+// path uses the same in-flight + cooldown contract as the canonical path.
+// Module-level (not instance-level) so multiple LifecycleManager instances
+// in the same process serialize through one upgrade attempt — matches
+// a2aProtocol.js's module-level guard. Process-local is sufficient: the
+// proxy daemon runs in a single process and any sibling process would
+// have its own require-cached state; cross-process serialization is the
+// hub's job via directive_id dedup, not the client's.
+let _proxyForceUpdateInFlight = false;
+let _proxyForceUpdateLastAttemptAt = 0;
+function _getProxyForceUpdateRetryCooldownMs() {
+  // Share the env var with a2aProtocol.js: an operator who sets
+  // EVOLVER_FORCE_UPDATE_RETRY_COOLDOWN_MS=0 in a test or production tune
+  // expects BOTH code paths to honour it. Default 15min matches
+  // a2aProtocol.js exactly.
+  const v = Number(process.env.EVOLVER_FORCE_UPDATE_RETRY_COOLDOWN_MS);
+  if (Number.isFinite(v) && v >= 0) return v;
+  return 15 * 60 * 1000;
+}
 
 let _cachedFingerprint = null;
 function _getEnvFingerprint() {
@@ -97,6 +136,203 @@ function _readLegacyNodeId() {
   return null;
 }
 
+// Mirror of src/gep/a2aProtocol.js `_persistNodeId`. Pure-proxy daemons
+// (EVOMAP_PROXY=1, no a2aProtocol heartbeat thread) mint their own
+// node_id and ONLY persist it to MailboxStore state.json. The legacy
+// `~/.evomap/node_id` file never gets written, so:
+//
+//   1. `_shortNodeIdForStatePath` in a2aProtocol.js (used by the proxy
+//      heartbeat to pick the per-node `force_update_last.<suffix>.json`
+//      path) falls all the way through to 'anon' — every proxy node on
+//      the same EVOLVER_HOME would collide on the same state file.
+//   2. A mixed-mode install (legacy evolve loop ran once, then user
+//      switched to proxy mode) is even worse: the legacy file holds a
+//      DIFFERENT id than the one in MailboxStore. The proxy heartbeats
+//      with body.node_id = its OWN id while writing
+//      `force_update_last.<legacy-suffix>.json`. The hub-side upgrade
+//      attempt row gets attributed to the wrong node.
+//
+// Calling this helper from hello() after the nodeId is resolved unifies
+// the two persistence paths onto a single identity. Atomic write
+// (per-pid tmp + rename) mirrors `_persistNodeSecret` in a2aProtocol.js;
+// 0o600 mode keeps the file owner-read-only on POSIX (silently ignored
+// on Windows, where %USERPROFILE% isolation is the only protection).
+//
+// Idempotent: if the file already holds the same id, we skip the write
+// to avoid an inode churn on every hello tick. If it holds a DIFFERENT
+// valid id, we still overwrite — the proxy's MailboxStore wins because
+// that is the id the hub already knows us by (any rotation away from
+// the legacy id was a deliberate operator action). The only way to
+// re-seed a legacy id back onto a proxy install is to clear
+// MailboxStore state.json (`evolver reset-local-secret`).
+function _persistLegacyNodeId(id) {
+  if (!id || !NODE_ID_RE.test(id)) return;
+  const targets = [
+    getEvomapPath('node_id'),
+    path.resolve(__dirname, '..', '..', '..', '.evomap_node_id'),
+  ];
+  // Try targets in order until one succeeds, matching the read order in
+  // _readLegacyNodeId. We only need ONE persistent copy; once the home
+  // path takes the write, the install-root path is unused.
+  for (const file of targets) {
+    try {
+      // Skip if the file already matches — common steady-state path,
+      // saves a syscall storm under heartbeat backoff doubling.
+      try {
+        if (fs.existsSync(file)) {
+          const existing = fs.readFileSync(file, 'utf8').trim();
+          if (existing === id) return;
+        }
+      } catch {
+        // Unreadable -- treat as missing and try to write.
+      }
+      const dir = path.dirname(file);
+      try {
+        if (!fs.existsSync(dir)) {
+          fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+        }
+      } catch (_) {
+        // mkdir failed (read-only fs, EPERM under sandboxing). Skip
+        // this candidate; the next one (install-root .evomap_node_id)
+        // may still work.
+        continue;
+      }
+      // Atomic write: a sibling evolver process (mixed-mode upgrade, two
+      // proxy daemons started by hand) could otherwise race on this
+      // path and leave a half-written file. Matches the pattern in
+      // a2aProtocol.js `_persistNodeSecret`.
+      const tmp = file + '.' + process.pid + '.tmp';
+      fs.writeFileSync(tmp, id, { encoding: 'utf8', mode: 0o600 });
+      fs.renameSync(tmp, file);
+      return;
+    } catch {
+      // Best-effort: continue to the next candidate. If both fail (no
+      // home, no writable install root) we accept the legacy file is
+      // unavailable — the proxy will still function, it just cannot
+      // unify state-file suffixes with a co-resident a2aProtocol path.
+    }
+  }
+}
+
+// Heartbeat-driven force_update trigger for proxy-mode nodes. Mirrors
+// `_maybeTriggerForceUpdateFromHeartbeat` in src/gep/a2aProtocol.js
+// (search there for that name to compare). Pure proxy-mode deployments
+// (EVOMAP_PROXY=1) never run the evolve run() loop or sendHeartbeat, so
+// without this trigger Hub can push force_update on every heartbeat
+// forever and the node will keep heartbeating on the old version — which
+// is exactly what shipped before PR #188's H1 fix.
+//
+// Drives `executeForceUpdate` directly, gated by an in-flight lock + a
+// cooldown on failures so we do not hammer npm/degit on every tick. After
+// the attempt, persists the outcome via `reportForceUpdateOutcome` so the
+// next heartbeat carries it as body.last_update — that's the path that
+// finally writes a row to the hub's EvolverUpgradeAttempt table.
+//
+// Logger is injected (not a console fallback) so tests can capture the
+// upgrade-path stderr without polluting CI output. The logger contract
+// matches what the LifecycleManager already uses.
+function _maybeTriggerForceUpdateFromHeartbeat(forceUpdate, logger) {
+  if (!forceUpdate || typeof forceUpdate !== 'object') return;
+  if (_proxyForceUpdateInFlight) return;
+  const nowMs = Date.now();
+  if (
+    _proxyForceUpdateLastAttemptAt &&
+    (nowMs - _proxyForceUpdateLastAttemptAt) < _getProxyForceUpdateRetryCooldownMs()
+  ) {
+    // A recent attempt already ran and either succeeded (process exited
+    // and we wouldn't be here on the post-restart heartbeat — see the
+    // FORCE_UPDATE_NOOP path in forceUpdate.js / reportForceUpdateOutcome
+    // status="skipped") or failed. Back off.
+    return;
+  }
+  _proxyForceUpdateInFlight = true;
+  _proxyForceUpdateLastAttemptAt = nowMs;
+
+  // Capture from_version BEFORE executeForceUpdate runs. A successful
+  // upgrade calls process.exit(78); the post-restart heartbeat reads the
+  // state file from a fresh process where require('package.json').version
+  // is the NEW version — so snapshot the CURRENTLY running version now.
+  let fromVersion = '';
+  try {
+    fromVersion = String((require('../../../package.json') || {}).version || '');
+  } catch (_) { /* best-effort */ }
+
+  // Kick off in a microtask so the heartbeat promise chain can still
+  // complete (log + return {ok:true}) before the long-running upgrade
+  // takes over the process. Matches a2aProtocol.js exactly.
+  Promise.resolve().then(() => {
+    let updated = false;
+    let noop = false;
+    let busy = false;
+    let thrownErr = null;
+    try {
+      const mod = require('../../forceUpdate');
+      const result = mod.executeForceUpdate(forceUpdate);
+      // Sentinel === comparison: executeForceUpdate returns the
+      // FORCE_UPDATE_NOOP symbol when the install is already at the
+      // required version. We must NOT treat that as "success" — doing so
+      // would (a) write a phantom {status:"success", from==to} row to
+      // EvolverUpgradeAttempt, and (b) trigger an exit(78) restart with
+      // nothing to restart for. The hub schema accepts status="skipped".
+      noop = (result === mod.FORCE_UPDATE_NOOP);
+      // FORCE_UPDATE_BUSY: another caller (e.g. a2aProtocol heartbeat
+      // trigger or an evolve tick) already holds the module-level
+      // _inFlight mutex in forceUpdate.js. Defensive only — the
+      // instance-level _proxyForceUpdateInFlight gate above and the
+      // single-caller property of pure proxy mode make BUSY unreachable
+      // in practice. If it does fire (mixed-mode regression, future
+      // additional caller, etc.), the other caller owns the telemetry:
+      // we MUST NOT write a state file or exit(78). Mirrors
+      // src/gep/a2aProtocol.js (search FORCE_UPDATE_BUSY).
+      busy = (result === mod.FORCE_UPDATE_BUSY);
+      updated = (result === true);
+    } catch (e) {
+      thrownErr = e;
+      try {
+        logger.warn(`[ForceUpdate] proxy heartbeat-trigger failed (non-fatal): ${e && e.message || e}`);
+      } catch (_) { /* logger broken; non-fatal */ }
+      updated = false;
+    } finally {
+      _proxyForceUpdateInFlight = false;
+    }
+    if (busy) {
+      try {
+        logger.log('[ForceUpdate] proxy heartbeat-trigger observed BUSY (concurrent invocation). Skipping telemetry; in-flight caller owns the outcome.');
+      } catch (_) { /* logger broken; non-fatal */ }
+      return;
+    }
+    // Persist outcome via the shared helper so the heartbeat-thread
+    // trigger and the proxy trigger stay in lockstep on payload assembly
+    // + validation. The next heartbeat reads this file and ferries it as
+    // body.last_update — same contract as the canonical path.
+    try {
+      reportForceUpdateOutcome(forceUpdate, {
+        updated: updated,
+        noop: noop,
+        error: thrownErr,
+        fromVersion: fromVersion,
+      });
+    } catch (e) {
+      try {
+        logger.warn(`[ForceUpdate] proxy reportForceUpdateOutcome failed (non-fatal): ${e && e.message || e}`);
+      } catch (_) { /* logger broken; non-fatal */ }
+    }
+    if (updated) {
+      try { logger.log('[ForceUpdate] Update complete (proxy heartbeat-trigger). Exiting for restart...'); } catch (_) {}
+      try { process.exit(78); } catch (_) {}
+    } else if (noop) {
+      try {
+        logger.log('[ForceUpdate] No-op (proxy heartbeat-trigger): already at required version. Skipping restart.');
+      } catch (_) {}
+    } else {
+      try {
+        logger.warn('[ForceUpdate] proxy heartbeat-trigger failed. Will retry after cooldown (' +
+          Math.round(_getProxyForceUpdateRetryCooldownMs() / 60000) + 'min).');
+      } catch (_) {}
+    }
+  });
+}
+
 class AuthError extends Error {
   constructor(message, statusCode) {
     super(message);
@@ -121,6 +357,48 @@ class LifecycleManager {
     this._consecutiveReauthFailures = 0;
     this._driftInterval = null;
     this._lastDriftCheckAt = 0;
+
+    // H4 fix: persist the legacy node_id file as soon as the in-memory
+    // node_id is known, NOT only after a successful hello(). The original
+    // code persisted only in hello() (see ~L390-398) — but proxy-mode boot
+    // can fire `reportForceUpdateOutcome` BEFORE hello() returns:
+    //
+    //   - First-tick heartbeat hits 426 → executeForceUpdate() → exit(78)
+    //     all happens BEFORE the hello() response is processed.
+    //   - enrich.js force_update path can fire during the same window.
+    //
+    // `_shortNodeIdForStatePath` in a2aProtocol.js then picks the
+    // state-file suffix from `_cachedNodeId` (never set in proxy mode —
+    // only getNodeId() sets it, and proxy never calls getNodeId()) or the
+    // legacy ~/.evomap/node_id file. With both empty, it falls through
+    // to 'anon', and the outcome lands at `force_update_last.anon.json`.
+    // Next boot's hello() writes the real id, the heartbeat reads
+    // `force_update_last.<8hex>.json`, the anon file is orphaned and the
+    // outcome is silently lost.
+    //
+    // Persisting at construction closes the window. _persistLegacyNodeId
+    // early-returns on invalid input (NODE_ID_RE gate, same regex as the
+    // hello() path uses) so a malformed/empty store value is a no-op,
+    // and it is idempotent on matching content so the cost is one
+    // existsSync + one readFileSync per construction. We keep the
+    // existing post-hello call as a safety net in case hello() mints or
+    // mutates the id.
+    try {
+      const earlyNodeId = this.store && this.store.getState
+        ? this.store.getState('node_id')
+        : null;
+      if (earlyNodeId && NODE_ID_RE.test(earlyNodeId)) {
+        _persistLegacyNodeId(earlyNodeId);
+      }
+    } catch (e) {
+      // Best-effort: persistence failure must never break construction.
+      // Logger may not exist if tests passed undefined; guard the call.
+      try {
+        this.logger.warn(
+          `[lifecycle] early persist of legacy node_id failed (non-fatal): ${e && e.message || e}`
+        );
+      } catch (_) { /* logger broken; non-fatal */ }
+    }
   }
 
   get nodeId() {
@@ -293,6 +571,27 @@ class LifecycleManager {
       }
 
       this.store.setState('node_id', nodeId);
+      // Unify proxy node_id with the legacy GEP file. Without this, the
+      // proxy-only fast path (EVOMAP_PROXY=1) never seeds
+      // ~/.evomap/node_id and `_shortNodeIdForStatePath` in a2aProtocol
+      // (used to pick the per-node `force_update_last.<suffix>.json`
+      // path for upgrade telemetry) falls through to 'anon' — every
+      // proxy node under the same EVOLVER_HOME would collide on the
+      // same state file. In a mixed-mode install where the legacy file
+      // holds a DIFFERENT (stale) id, the helper overwrites it so the
+      // state-file suffix matches `this.nodeId` — the id the hub sees
+      // in body.node_id. We persist AFTER hello succeeds so a rejected
+      // first-boot mint never commits to disk; on a rejection the next
+      // tick will mint fresh again (existing behaviour).
+      try {
+        _persistLegacyNodeId(nodeId);
+      } catch (e) {
+        // Best-effort: persistence failure must never break hello. Log
+        // and move on — the proxy still functions, the state-file
+        // suffix just falls back to 'anon' until the next successful
+        // hello retries the write.
+        this.logger.warn(`[lifecycle] failed to persist legacy node_id (non-fatal): ${e && e.message || e}`);
+      }
       this.logger.log(`[lifecycle] hello OK, node_id=${nodeId}${rotateSecret ? ' (secret rotated)' : ''}`);
       return { ok: true, nodeId, response: data };
     } catch (err) {
@@ -448,6 +747,21 @@ class LifecycleManager {
         },
       };
 
+      // Attach any pending force_update outcome so the hub-side
+      // EvolverUpgradeAttempt table gets a row. Captured in a local so the
+      // post-2xx clear matches identity (rotation-safe — see
+      // _clearLastUpdateStateIfMatches). Never let telemetry throw.
+      let capturedLastUpdate = null;
+      try {
+        const pending = readPendingLastUpdate();
+        if (pending) {
+          body.last_update = pending;
+          capturedLastUpdate = pending;
+        }
+      } catch (e) {
+        this.logger.warn(`[lifecycle] readPendingLastUpdate failed (non-fatal): ${e && e.message || e}`);
+      }
+
       const res = await hubFetch(endpoint, {
         method: 'POST',
         headers: this._buildHeaders(),
@@ -470,8 +784,70 @@ class LifecycleManager {
       }
 
       if (!res.ok) {
-        this._consecutiveFailures++;
         const errText = await res.text().catch(() => '');
+        // 426 Upgrade Required: hub emits this when our evolver_version is
+        // below the minimum version it requires. The body is JSON of shape
+        // `{ error: 'evolver_min_version_required', force_update: {...} }`
+        // (see hub `src/routes/a2a/_middleware.js`). Pre-fix this fell
+        // through to the generic `http_426` error and the proxy never
+        // attempted the upgrade — defeating the very mechanism that 426
+        // exists to drive. Mirror the 200+force_update path: parse the
+        // body, fire executeForceUpdate (which writes the state file via
+        // reportForceUpdateOutcome), and let the next heartbeat carry the
+        // attempt as body.last_update. Still return an error so the
+        // caller's failure counter ticks and the loop backs off.
+        if (res.status === 426) {
+          let parsed = null;
+          try { parsed = JSON.parse(errText); } catch (_) { /* body not JSON */ }
+          const fu = parsed && parsed.force_update;
+          if (fu && typeof fu === 'object') {
+            this.logger.warn(
+              `[lifecycle] heartbeat HTTP 426 with force_update directive (required=${
+                fu.required_version || '?'
+              }) — triggering executeForceUpdate`
+            );
+            _maybeTriggerForceUpdateFromHeartbeat(fu, this.logger);
+          } else {
+            this.logger.warn(
+              `[lifecycle] heartbeat HTTP 426 without parseable force_update payload: ${errText}`
+            );
+          }
+        }
+        // Hub 400 circuit breaker (mirrors a2aProtocol.js sendHeartbeat
+        // ~L2376-2411): if last_update was attached this tick and the hub
+        // rejected the body with 400 AND the rejection names the
+        // last_update field, the state file is poisoning every heartbeat
+        // (e.g. downgrade-then-upgrade left a payload the new hub schema
+        // rejects, or a manual edit corrupted the JSON shape). The proxy
+        // path used to lack this breaker entirely, so a single bad payload
+        // would block telemetry forever -- every retry re-sends the same
+        // poison and re-fails with 400. Single-strike (no counter): the
+        // 400 + last_update substring pair is unambiguous enough that
+        // waiting for repeats just delays recovery. Scope intentionally
+        // narrowed to 400-only (NOT any 4xx): 401/403 are auth errors
+        // (handled above), 404/405/409 etc. are hub-routing problems that
+        // are not the payload's fault. The existing _consecutiveFailures
+        // backoff is preserved -- the breaker runs BEFORE the early
+        // return so the file is cleared, and then the normal failure
+        // path continues unchanged.
+        if (res.status === 400 && capturedLastUpdate) {
+          const errorText = 'http_400: ' + errText;
+          if (/last[_-]?update/i.test(errorText)) {
+            // Bypass any rate-limited warn helper: this is a critical
+            // recovery signal that must surface even if other ForceUpdate
+            // warns fired recently.
+            this.logger.warn(
+              '[lifecycle] hub 400 with last_update attached (error names last_update); ' +
+                'clearing poisoning state file.'
+            );
+            try {
+              clearLastUpdateOnAck(capturedLastUpdate);
+            } catch (e) {
+              this.logger.warn(`[lifecycle] clearLastUpdateOnAck failed (non-fatal): ${e && e.message || e}`);
+            }
+          }
+        }
+        this._consecutiveFailures++;
         this.logger.error(`[lifecycle] heartbeat HTTP ${res.status}: ${errText}`);
         return { ok: false, error: `http_${res.status}`, statusCode: res.status };
       }
@@ -481,9 +857,71 @@ class LifecycleManager {
       this._consecutiveFailures = 0;
       this.store.setState('last_heartbeat_at', new Date().toISOString());
 
+      // Semantic parity with a2aProtocol.js sendHeartbeat: a 2xx with
+      // `{ok:false}` or `status:'unknown_node'` is NOT a hub-side persist,
+      // so the state file must survive for the next heartbeat to retry
+      // (unknown_node triggers a re-hello below).
+      //
+      // PR #188 follow-up (HIGH H1-client): the hub now writes a top-level
+      // `last_update_ack: { ok, reason? }` whenever the request carried a
+      // last_update payload. Gate the clear on the ack so we do not unlink
+      // the only evidence of the upgrade attempt when the hub's
+      // fire-and-forget persist throws / dedup-misses / schema-rejects /
+      // bypass-path returns false. Backward compat: an old hub that has not
+      // yet rolled out the ack writer falls back to the original bare-2xx
+      // semantics so this client keeps working against pre-rollout hubs.
+      // See src/gep/a2aProtocol.js sendHeartbeat for the canonical comment.
+      const hubAccepted = !(data && data.ok === false) && data?.status !== 'unknown_node';
+      if (capturedLastUpdate) {
+        const ack = data && data.last_update_ack;
+        const hasAck = ack && typeof ack === 'object';
+        let shouldClear;
+        if (hasAck) {
+          shouldClear = ack.ok === true
+            || ack.reason === 'duplicate'
+            || ack.reason === 'invalid';
+          if (ack.reason === 'failed') {
+            this.logger.warn('[lifecycle] hub last_update_ack=failed; ' +
+              'keeping state file for retry on next heartbeat.');
+          } else if (ack.reason === 'invalid') {
+            this.logger.warn('[lifecycle] hub last_update_ack=invalid; ' +
+              'clearing state file (retry will not help).');
+          }
+        } else {
+          shouldClear = hubAccepted;
+        }
+        if (shouldClear) {
+          try {
+            clearLastUpdateOnAck(capturedLastUpdate);
+          } catch (e) {
+            this.logger.warn(`[lifecycle] clearLastUpdateOnAck failed (non-fatal): ${e && e.message || e}`);
+          }
+        }
+      }
+
       if (data?.status === 'unknown_node') {
         this.logger.warn('[lifecycle] Node unknown, re-registering...');
         await this.hello();
+      }
+
+      // PR #188 H1 fix: 200 with a `force_update` directive must drive
+      // executeForceUpdate the same way a2aProtocol.js does for
+      // non-proxy nodes (see a2aProtocol.js:2292-2305 and
+      // _maybeTriggerForceUpdateFromHeartbeat). Pure proxy-mode nodes
+      // never enter the evolve run() loop, so the consumeForceUpdate
+      // path never fires for them — without this block the hub could
+      // push force_update forever with zero upgrade attempts and zero
+      // EvolverUpgradeAttempt rows. The helper is in-flight + cooldown
+      // gated; placing the call here (post-events, pre-min_version
+      // banner) means a single response carrying both events AND a
+      // force_update still processes the events first.
+      if (data && data.force_update && typeof data.force_update === 'object') {
+        this.logger.log(
+          '[ForceUpdate] Hub requires update to ' +
+          (data.force_update.required_version || '?') +
+          ' -- reason: ' + (data.force_update.reason || 'unspecified')
+        );
+        _maybeTriggerForceUpdateFromHeartbeat(data.force_update, this.logger);
       }
 
       if (Array.isArray(data?.events) && data.events.length > 0) {
@@ -665,4 +1103,20 @@ class LifecycleManager {
   }
 }
 
-module.exports = { LifecycleManager, AuthError, DEFAULT_HEARTBEAT_INTERVAL, HEARTBEAT_BACKOFF_CAP_MS };
+module.exports = {
+  LifecycleManager,
+  AuthError,
+  DEFAULT_HEARTBEAT_INTERVAL,
+  HEARTBEAT_BACKOFF_CAP_MS,
+  // Test hooks behind `_testing` to mirror the namespacing used by
+  // a2aProtocol.js — production callers must not accidentally tweak the
+  // proxy force_update lifecycle state.
+  _testing: {
+    // Reset proxy heartbeat-driven force_update state. Avoids cooldown
+    // leakage between sibling tests that share one process.
+    _resetProxyForceUpdateStateForTesting: function () {
+      _proxyForceUpdateInFlight = false;
+      _proxyForceUpdateLastAttemptAt = 0;
+    },
+  },
+};

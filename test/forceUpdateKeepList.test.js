@@ -131,7 +131,11 @@ describe('executeForceUpdate: keep-list preserves user config files', () => {
     const { executeForceUpdate } = freshRequireForceUpdate(() => {
       throw new Error('simulated network failure');
     });
-    const result = executeForceUpdate({ required_version: '>=1.0.0' });
+    // Use a version strictly NEWER than populateFakeInstall's '1.0.0' so we
+    // bypass the idempotency short-circuit (which correctly returns true when
+    // already at the required version) and actually exercise the degit
+    // failure path that this test is asserting on.
+    const result = executeForceUpdate({ required_version: '>=2.0.0' });
 
     assert.equal(result, false, 'update should fail');
     // Deletion loop never runs when degit fails — .env must still be present

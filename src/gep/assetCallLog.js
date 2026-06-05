@@ -21,7 +21,7 @@ function ensureDir(filePath) {
  *
  * @param {object} entry
  * @param {string} entry.run_id
- * @param {string} entry.action - hub_search_hit | hub_search_miss | asset_reuse | asset_reference | asset_publish | asset_publish_skip
+ * @param {string} entry.action - hub_search_hit | hub_search_miss | asset_reuse | asset_reference | asset_publish | asset_publish_skip | asset_inject | asset_inject_shadow
  * @param {string} [entry.asset_id]
  * @param {string} [entry.asset_type]
  * @param {string} [entry.source_node_id]
@@ -122,9 +122,48 @@ function summarizeCallLog(opts) {
   };
 }
 
+/**
+ * P4-a Slice A: local-only reuse-attribution rollup. Aggregates this node's
+ * asset_reuse / asset_reference log entries per reused asset, giving the team a
+ * LOCAL view of which Hub assets this node reused — without depending on the
+ * lossy best-effort Hub sync, and without any network call or money movement.
+ * Pure read over the local jsonl; safe to call anytime.
+ *
+ * @param {object} [opts] - readCallLog filters (e.g. {since})
+ * @returns {{ total_reuse:number, total_reference:number, by_asset:object[] }}
+ */
+function reuseAttributionSummary(opts) {
+  const o = opts || {};
+  const entries = readCallLog(o).filter(
+    e => e.action === 'asset_reuse' || e.action === 'asset_reference'
+  );
+  const byAsset = new Map();
+  for (const e of entries) {
+    const id = e.asset_id || '(unknown)';
+    let agg = byAsset.get(id);
+    if (!agg) {
+      agg = { asset_id: id, source_node_id: e.source_node_id || null, chain_id: e.chain_id || null, reuse: 0, reference: 0 };
+      byAsset.set(id, agg);
+    }
+    if (e.action === 'asset_reuse') agg.reuse += 1;
+    else agg.reference += 1;
+    // keep first-seen source/chain; do not trust later rows to overwrite
+    if (!agg.source_node_id && e.source_node_id) agg.source_node_id = e.source_node_id;
+    if (!agg.chain_id && e.chain_id) agg.chain_id = e.chain_id;
+  }
+  const byAssetArr = Array.from(byAsset.values())
+    .sort((a, b) => (b.reuse + b.reference) - (a.reuse + a.reference));
+  return {
+    total_reuse: entries.filter(e => e.action === 'asset_reuse').length,
+    total_reference: entries.filter(e => e.action === 'asset_reference').length,
+    by_asset: byAssetArr,
+  };
+}
+
 module.exports = {
   logAssetCall,
   readCallLog,
   summarizeCallLog,
+  reuseAttributionSummary,
   getLogPath,
 };

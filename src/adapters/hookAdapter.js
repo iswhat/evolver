@@ -76,7 +76,7 @@ function mergeWithHooksUnion(target, source) {
       if (tArr && sArr) {
         const isEvolverOwned = (entry) => {
           const cmds = collectCommands(entry);
-          return cmds.some(c => c.includes('evolver-session') || c.includes('evolver-signal'));
+          return cmds.some(c => c.includes('evolver-session') || c.includes('evolver-signal') || c.includes('evolver-task-recall'));
         };
         const userEntries = tArr.filter(e => !isEvolverOwned(e));
         result.hooks[event] = [...userEntries, ...sArr];
@@ -171,6 +171,7 @@ function copyHookScripts(destDir, evolverRoot) {
     'evolver-session-start.js',
     'evolver-signal-detect.js',
     'evolver-session-end.js',
+    'evolver-task-recall.js',
   ];
   fs.mkdirSync(destDir, { recursive: true });
   const copied = [];
@@ -224,7 +225,7 @@ function removeEvolverHooks(filePath, { markerKey = '_evolver_managed' } = {}) {
           const before = data.hooks[event].length;
           data.hooks[event] = data.hooks[event].filter(h => {
             const cmd = h.command || '';
-            return !cmd.includes('evolver-session') && !cmd.includes('evolver-signal');
+            return !cmd.includes('evolver-session') && !cmd.includes('evolver-signal') && !cmd.includes('evolver-task-recall');
           });
           if (data.hooks[event].length !== before) changed = true;
           if (data.hooks[event].length === 0) delete data.hooks[event];
@@ -257,6 +258,7 @@ function removeHookScripts(hooksDir) {
     'evolver-session-start.js',
     'evolver-signal-detect.js',
     'evolver-session-end.js',
+    'evolver-task-recall.js',
   ];
   let removed = 0;
   for (const name of scripts) {

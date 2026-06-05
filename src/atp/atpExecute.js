@@ -59,7 +59,7 @@ function _buildGene(capabilities, signals) {
     : ['atp_task'];
   const gene = {
     type: 'Gene',
-    schema_version: '1.0',
+    schema_version: '1.0.0',
     id: 'gene_atp_answer_' + caps.sort().join('_').slice(0, 40),
     summary: 'Deliver an ATP task answer for capabilities: ' + caps.join(', '),
     signals_match: sig,
@@ -69,6 +69,9 @@ function _buildGene(capabilities, signals) {
       'Produce a concrete, actionable answer addressing the question directly.',
       'Return the answer as Capsule content for verifiable delivery.',
     ],
+    // gep-sdk Gene schema requires `constraints`; an ATP answer edits no
+    // files, so the blast radius is empty rather than left unbounded.
+    constraints: { max_files: 0, forbidden_paths: [] },
     validation: [
       'Answer is non-empty and directly addresses the buyer question.',
       'Answer references the requested capabilities where relevant.',
@@ -86,7 +89,7 @@ function _buildCapsule({ gene, answer, summary, orderId, taskId, capabilities, s
     || 'ATP merchant delivery for order ' + String(orderId || '').slice(0, 24);
   const capsule = {
     type: 'Capsule',
-    schema_version: '1.0',
+    schema_version: '1.0.0',
     id: 'capsule_atp_' + String(orderId || taskId || Date.now()).replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 40),
     trigger: sig,
     gene: gene.id,
@@ -96,11 +99,21 @@ function _buildCapsule({ gene, answer, summary, orderId, taskId, capabilities, s
     outcome: { status: 'success', score: confidence },
     env_fingerprint: { platform: process.platform, arch: process.arch, runtime: 'evolver-atp' },
     content: answer,
-    source_type: 'atp_task_executor',
-    atp: {
-      order_id: orderId || null,
-      task_id: taskId || null,
-      capabilities: caps,
+    // 'generated' is the gep-sdk source_type enum value for a freshly
+    // produced asset; the ATP-specific provenance rides in `a2a.atp` below.
+    source_type: 'generated',
+    // The order/task association MUST live under `a2a`, not as a top-level
+    // `atp` key: the Hub's payload sanitizer allow-lists `a2a` but not `atp`
+    // (CAPSULE_ALLOWED_FIELDS), so a top-level `atp` was being silently
+    // stripped on publish and the association never reached the Hub. `a2a`
+    // is also an open object in gep-sdk's Capsule schema, so this keeps the
+    // bundle GEP-valid.
+    a2a: {
+      atp: {
+        order_id: orderId || null,
+        task_id: taskId || null,
+        capabilities: caps,
+      },
     },
   };
   capsule.asset_id = computeAssetId(capsule);

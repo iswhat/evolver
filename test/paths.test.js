@@ -10,6 +10,19 @@ function freshRequire(modulePath) {
   return require(resolved);
 }
 
+function canonicalPath(value) {
+  const resolved = path.resolve(value);
+  try {
+    return fs.realpathSync.native(resolved);
+  } catch {
+    try { return fs.realpathSync(resolved); } catch { return resolved; }
+  }
+}
+
+function assertPathEqual(actual, expected, message) {
+  assert.equal(canonicalPath(actual), canonicalPath(expected), message);
+}
+
 describe('getRepoRoot', () => {
   let tmpDir;
   const savedEnv = {};
@@ -148,7 +161,7 @@ describe('getRepoRoot', () => {
     const { getRepoRoot } = require(resolved);
     // Opt-out: should fall back to ownDir (the fake package root), NOT host.
     const ownDir = path.resolve(fakeGepDir, '..', '..');
-    assert.equal(getRepoRoot(), ownDir);
+    assertPathEqual(getRepoRoot(), ownDir);
 
     delete require.cache[resolved];
     fs.rmSync(host, { recursive: true, force: true });
@@ -170,7 +183,7 @@ describe('getRepoRoot', () => {
     delete require.cache[resolved];
     const { getRepoRoot } = require(resolved);
     const ownDir = path.resolve(fakeGepDir, '..', '..');
-    assert.equal(getRepoRoot(), ownDir);
+    assertPathEqual(getRepoRoot(), ownDir);
 
     delete require.cache[resolved];
     fs.rmSync(host, { recursive: true, force: true });
@@ -611,7 +624,7 @@ describe('getRepoRoot node_modules boundary (#541)', () => {
         `regressed: walk escaped node_modules and picked outer .git at ${root}`);
       // Expected fallback: ownDir (the install itself) since no .git was
       // found within the boundary.
-      assert.equal(resolved, installDir);
+      assertPathEqual(resolved, installDir);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
       fs.rmSync(cwd, { recursive: true, force: true });
@@ -625,7 +638,7 @@ describe('getRepoRoot node_modules boundary (#541)', () => {
       const resolved = runGetRepoRootIn(installDir, cwd);
       // The boundary INCLUDES the parent of node_modules (i.e. the user's
       // project), so <root>/.git is reachable and must be picked.
-      assert.equal(resolved, root,
+      assertPathEqual(resolved, root,
         `regression: local install no longer finds the project's own .git`);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
@@ -644,9 +657,9 @@ describe('getRepoRoot node_modules boundary (#541)', () => {
       // cwd == install dir, NOT an isolated tmp dir. Reproduces:
       //   cd /opt/homebrew/lib/node_modules/@evomap/evolver && evolver ...
       const resolved = runGetRepoRootIn(installDir, installDir);
-      assert.notEqual(resolved, root,
+      assert.notEqual(canonicalPath(resolved), canonicalPath(root),
         `regression: cwd walk escaped node_modules and picked outer .git at ${root}`);
-      assert.equal(resolved, installDir);
+      assertPathEqual(resolved, installDir);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
@@ -664,7 +677,7 @@ describe('getRepoRoot node_modules boundary (#541)', () => {
     fs.mkdirSync(sibling, { recursive: true });
     try {
       const resolved = runGetRepoRootIn(installDir, sibling);
-      assert.equal(resolved, root,
+      assertPathEqual(resolved, root,
         `regression: user cd'd into project's node_modules sub-dir no longer finds the project root`);
     } finally {
       fs.rmSync(root, { recursive: true, force: true });

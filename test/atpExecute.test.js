@@ -50,8 +50,12 @@ describe('atpExecute._buildCapsule', () => {
     assert.equal(capsule.gene, gene.id);
     assert.equal(capsule.content.slice(0, 15), 'Here is a concr');
     assert.equal(capsule.outcome.status, 'success');
-    assert.equal(capsule.atp.order_id, 'proof_abc123');
-    assert.equal(capsule.atp.task_id, 'task_xyz789');
+    // ATP provenance rides under `a2a` (Hub-allow-listed), not a top-level
+    // `atp` key (which the Hub payload sanitizer would strip on publish).
+    assert.equal(capsule.a2a.atp.order_id, 'proof_abc123');
+    assert.equal(capsule.a2a.atp.task_id, 'task_xyz789');
+    assert.equal(capsule.source_type, 'generated');
+    assert.equal(capsule.schema_version, '1.0.0');
     assert.ok(capsule.asset_id.startsWith('sha256:'));
   });
 

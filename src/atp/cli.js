@@ -14,6 +14,14 @@
 // injectable for tests. Each runner returns a Promise that resolves to
 // { exitCode: number, output?: string, data?: object }.
 
+const {
+  ATP_VERIFY_MODES,
+  ATP_VERIFY_ACTIONS,
+  ATP_ROUTING_MODES,
+  ATP_PROOF_STATUSES,
+  ATP_ROLES,
+} = require('./protocol');
+
 function _parseNamed(args, longFlag, shortFlag) {
   const long = args.findIndex(a => typeof a === 'string' && (a === longFlag || a.startsWith(longFlag + '=')));
   if (long !== -1) {
@@ -83,11 +91,11 @@ function parseBuyArgs(args) {
 
 function parseOrdersArgs(args) {
   const role = _parseNamed(args, '--role', null);
-  if (role && !['consumer', 'merchant'].includes(role)) {
-    return { ok: false, error: 'invalid --role: ' + role + ' (expected consumer|merchant)' };
+  if (role && !ATP_ROLES.includes(role)) {
+    return { ok: false, error: 'invalid --role: ' + role + ' (expected ' + ATP_ROLES.join('|') + ')' };
   }
   const status = _parseNamed(args, '--status', null);
-  if (status && !['pending', 'verified', 'disputed', 'settled'].includes(status)) {
+  if (status && !ATP_PROOF_STATUSES.includes(status)) {
     return { ok: false, error: 'invalid --status: ' + status };
   }
   const limitRaw = _parseNamed(args, '--limit', null);
@@ -112,8 +120,8 @@ function parseVerifyArgs(args) {
     return { ok: false, error: 'verify requires <orderId>' };
   }
   const action = _parseNamed(args, '--action', null) || 'confirm';
-  if (!['confirm', 'ai_judge'].includes(action)) {
-    return { ok: false, error: 'invalid --action: ' + action + ' (expected confirm|ai_judge)' };
+  if (!ATP_VERIFY_ACTIONS.includes(action)) {
+    return { ok: false, error: 'invalid --action: ' + action + ' (expected ' + ATP_VERIFY_ACTIONS.join('|') + ')' };
   }
   return { ok: true, opts: { orderId, action } };
 }
@@ -324,11 +332,11 @@ async function runAtp(opts, deps) {
 function printUsage() {
   return [
     'ATP subcommands:',
-    '  evolver buy <caps> [--budget=N] [--question "..."] [--routing=fastest|cheapest|auction|swarm]',
-    '              [--verify=auto|ai_judge|bilateral] [--no-wait] [--timeout=<seconds>]',
-    '  evolver orders [--role=consumer|merchant] [--status=pending|verified|disputed|settled]',
+    '  evolver buy <caps> [--budget=N] [--question "..."] [--routing=' + ATP_ROUTING_MODES.join('|') + ']',
+    '              [--verify=' + ATP_VERIFY_MODES.join('|') + '] [--no-wait] [--timeout=<seconds>]',
+    '  evolver orders [--role=' + ATP_ROLES.join('|') + '] [--status=' + ATP_PROOF_STATUSES.join('|') + ']',
     '                 [--limit=N] [--json]',
-    '  evolver verify <orderId> [--action=confirm|ai_judge]',
+    '  evolver verify <orderId> [--action=' + ATP_VERIFY_ACTIONS.join('|') + ']',
     '  evolver atp <enable|disable|status>   -- manage auto-spend consent',
   ].join('\n');
 }
