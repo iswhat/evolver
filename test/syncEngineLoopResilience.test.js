@@ -504,6 +504,74 @@ describe('SyncEngine Hub non-API response backoff', () => {
     assert.deepEqual(logger._errors, []);
   });
 
+  it('InboundSync skips oversized inbound rows and advances the cursor', async () => {
+    const maxBytes = 512;
+    const savedMax = process.env.EVOMAP_MAILBOX_MAX_LINE_BYTES;
+    process.env.EVOMAP_MAILBOX_MAX_LINE_BYTES = String(maxBytes);
+    hubFetchMod._setFetchImplForTest(async () => ({
+      status: 200,
+      ok: true,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      text: async () => JSON.stringify({
+        next_cursor: 'cursor-after-oversized',
+        messages: [
+          {
+            id: 'in-ok-before',
+            type: 'hub_event',
+            payload: { text: 'before' },
+            priority: 'normal',
+          },
+          {
+            id: 'in-too-large',
+            type: 'hub_event',
+            payload: { text: 'x'.repeat(maxBytes * 2) },
+            priority: 'normal',
+          },
+          {
+            id: 'in-ok-after',
+            type: 'hub_event',
+            payload: { text: 'after' },
+            priority: 'normal',
+          },
+        ],
+      }),
+    }));
+
+    const { MailboxStore } = require('../src/proxy/mailbox/store');
+    const fs = require('fs');
+    const os = require('os');
+    const path = require('path');
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'inbound-oversized-'));
+    const store = new MailboxStore(dataDir);
+    const logger = makeQuietLogger();
+    const inbound = new InboundSync({
+      store,
+      hubUrl: 'https://hub.example',
+      getHeaders: () => ({}),
+      logger,
+    });
+
+    try {
+      store.setState('node_id', 'node_aaaaaaaaaaaa');
+
+      const result = await inbound.pull();
+
+      assert.equal(result.received, 2);
+      assert.equal(result.dropped, 1);
+      assert.equal(result.cursor, 'cursor-after-oversized');
+      assert.equal(store.getCursor('evomap-hub:inbound_cursor'), 'cursor-after-oversized');
+      assert.ok(store.getById('in-ok-before'));
+      assert.ok(store.getById('in-ok-after'));
+      assert.equal(store.getById('in-too-large'), null);
+      assert.equal(logger._errors.length, 0);
+    } finally {
+      store.close();
+      try { fs.rmSync(dataDir, { recursive: true }); } catch (_) {}
+      if (savedMax === undefined) delete process.env.EVOMAP_MAILBOX_MAX_LINE_BYTES;
+      else process.env.EVOMAP_MAILBOX_MAX_LINE_BYTES = savedMax;
+    }
+  });
+
   it('InboundSync redacts JSON auth response bodies before surfacing AuthError', async () => {
     const body = sensitiveHubBody();
     hubFetchMod._setFetchImplForTest(async () => makeTextResponse(

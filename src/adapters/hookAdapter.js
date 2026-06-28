@@ -10,7 +10,30 @@ const PLATFORMS = {
   opencode: { name: 'opencode', configDir: '.opencode', detector: '.opencode' },
 };
 
+function detectPlatformFromEnv(env = process.env) {
+  const hasStrongClaudeSignal = env.CLAUDECODE || env.CLAUDE_CODE_ENTRYPOINT;
+  if (hasStrongClaudeSignal) {
+    return 'claude-code';
+  }
+
+  const hasCursorSignal =
+    env.CURSOR_TRACE_ID ||
+    env.CURSOR_SESSION_ID ||
+    env.CURSOR_PROJECT_DIR ||
+    String(env.TERM_PROGRAM || '').toLowerCase() === 'cursor';
+  if (hasCursorSignal) {
+    return 'cursor';
+  }
+  if (env.CLAUDE_PROJECT_DIR) {
+    return 'claude-code';
+  }
+  return null;
+}
+
 function detectPlatform(cwd) {
+  const envPlatform = detectPlatformFromEnv();
+  if (envPlatform) return envPlatform;
+
   const root = cwd || process.cwd();
   const home = os.homedir();
   for (const [id, meta] of Object.entries(PLATFORMS)) {
@@ -362,6 +385,7 @@ async function setupHooks({ platform, cwd, force, uninstall, evolverRoot } = {})
 }
 
 module.exports = {
+  detectPlatformFromEnv,
   detectPlatform,
   resolveConfigRoot,
   loadAdapter,

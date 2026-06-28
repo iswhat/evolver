@@ -139,6 +139,10 @@ function fakeA2a() {
   };
 }
 
+function authorizationHeader(headers) {
+  return headers && (headers.Authorization || headers.authorization);
+}
+
 function mutatingA2a() {
   return {
     buildPublishBundle: ({ gene, capsule, event }) => {
@@ -999,6 +1003,43 @@ test('reuse.v1 preserves stable Hub capability reasons instead of not_found fall
   }
 });
 
+test('reuse.v1 uses node secret for node-scoped fetch when OAuth is also available', async () => {
+  const nodeSecret = 'n'.repeat(64);
+  const oauthToken = 'oauth-access-token';
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'reuse-v1-node-auth-'));
+  const fetched = withComputedAssetId(gene());
+  const io = capture();
+  let buildHubHeadersCalls = 0;
+  let fetchCalls = 0;
+  const a2a = Object.assign({}, fakeA2a(), {
+    buildHubHeaders: () => {
+      buildHubHeadersCalls++;
+      return { Authorization: 'Bearer ' + oauthToken };
+    },
+  });
+
+  const code = await runReuseCommand(['--id', fetched.asset_id, '--json'], {
+    out: io.out,
+    assetsDir: dir,
+    assetStore: fakeStore([]),
+    hubUrl: 'https://hub.test',
+    nodeSecret,
+    a2a,
+    hubFetch: async (url, opts) => {
+      fetchCalls++;
+      assert.ok(url.endsWith('/a2a/fetch'));
+      assert.equal(authorizationHeader(opts.headers), 'Bearer ' + nodeSecret);
+      assert.notEqual(authorizationHeader(opts.headers), 'Bearer ' + oauthToken);
+      return { ok: true, status: 200, json: async () => ({ payload: { assets: [fetched] } }) };
+    },
+  });
+
+  assert.equal(code, 0);
+  assert.equal(fetchCalls, 1);
+  assert.equal(buildHubHeadersCalls, 0);
+  assert.equal(io.json().status, 'ok');
+});
+
 test('publish.v1 redacts literal local node secrets from stdout JSON and dependency stderr', async () => {
   const io = capture();
   let stderr = '';
@@ -1331,7 +1372,51 @@ test('publish.v1 actual publish requires Hub auth before validate or publish', a
   assert.equal(json.reason, 'auth_required');
 });
 
-test('publish.v1 accepts OAuth-only Hub authorization for dry-run and actual publish', async () => {
+test('publish.v1 uses node secret for node-scoped validate and publish when OAuth is also available', async () => {
+  const nodeSecret = 'n'.repeat(64);
+  const oauthToken = 'oauth-access-token';
+  const io = capture();
+  const seen = {};
+  let buildHubHeadersCalls = 0;
+  const a2a = Object.assign({}, fakeA2a(), {
+    buildHubHeaders: () => {
+      buildHubHeadersCalls++;
+      return { Authorization: 'Bearer ' + oauthToken };
+    },
+  });
+
+  const code = await runPublishCommand(['--asset=g', '--asset=c', '--json'], {
+    out: io.out,
+    hubUrl: 'https://hub.test',
+    nodeSecret,
+    a2a,
+    assetStore: fakeStore([gene({ asset_id: 'g' }), capsule({ asset_id: 'c', gene: 'g' })]),
+    hubFetch: async (url, opts) => {
+      const auth = authorizationHeader(opts.headers);
+      assert.equal(auth, 'Bearer ' + nodeSecret);
+      assert.notEqual(auth, 'Bearer ' + oauthToken);
+      if (url.endsWith('/a2a/validate')) {
+        seen.validate = auth;
+        return { ok: true, status: 200, json: async () => ({ payload: { valid: true } }) };
+      }
+      if (url.endsWith('/a2a/publish')) {
+        seen.publish = auth;
+        return { ok: true, status: 200, json: async () => ({ payload: { status: 'accepted' } }) };
+      }
+      throw new Error('unexpected endpoint');
+    },
+  });
+
+  assert.equal(code, 0);
+  assert.deepEqual(seen, {
+    validate: 'Bearer ' + nodeSecret,
+    publish: 'Bearer ' + nodeSecret,
+  });
+  assert.equal(buildHubHeadersCalls, 0);
+  assert.equal(io.json().status, 'accepted');
+});
+
+test('publish.v1 rejects OAuth-only authorization for node-scoped dry-run and actual publish', async () => {
   const oauthA2a = {
     buildPublishBundle: () => {
       throw new Error('publishBundle: node_secret is required for signing');
@@ -1339,50 +1424,29 @@ test('publish.v1 accepts OAuth-only Hub authorization for dry-run and actual pub
     buildHubHeaders: () => ({ Authorization: 'Bearer oauth-access-token' }),
   };
 
-  const dryRun = capture();
-  let dryRunHubCalls = 0;
-  const dryRunCode = await runPublishCommand(['--asset=g', '--asset=c', '--dry-run', '--json'], {
-    out: dryRun.out,
-    hubUrl: 'https://hub.test',
-    nodeSecret: null,
-    a2a: oauthA2a,
-    assetStore: fakeStore([gene({ asset_id: 'g' }), capsule({ asset_id: 'c', gene: 'g' })]),
-    hubFetch: async (_url, opts) => {
-      dryRunHubCalls++;
-      assert.equal(opts.headers.Authorization, 'Bearer oauth-access-token');
-      const message = JSON.parse(opts.body);
-      assert.equal(message.payload.signature, undefined);
-      return { ok: true, status: 200, json: async () => ({ payload: { valid: true } }) };
-    },
-  });
-  assert.equal(dryRunCode, 0);
-  assert.equal(dryRunHubCalls, 1);
-  assert.equal(dryRun.json().mode, 'dry_run');
-  assert.equal(dryRun.json().reason, undefined);
+  for (const row of [
+    { name: 'dry-run', args: ['--asset=g', '--asset=c', '--dry-run', '--json'], mode: 'dry_run' },
+    { name: 'actual', args: ['--asset=g', '--asset=c', '--json'], mode: 'publish' },
+  ]) {
+    const io = capture();
+    let hubCalls = 0;
+    const code = await runPublishCommand(row.args, {
+      out: io.out,
+      hubUrl: 'https://hub.test',
+      nodeSecret: null,
+      a2a: oauthA2a,
+      assetStore: fakeStore([gene({ asset_id: 'g' }), capsule({ asset_id: 'c', gene: 'g' })]),
+      hubFetch: async () => {
+        hubCalls++;
+        throw new Error(row.name + ' should not send OAuth to node-scoped endpoint');
+      },
+    });
 
-  const actual = capture();
-  const seen = [];
-  const actualCode = await runPublishCommand(['--asset=g', '--asset=c', '--json'], {
-    out: actual.out,
-    hubUrl: 'https://hub.test',
-    nodeSecret: null,
-    a2a: oauthA2a,
-    assetStore: fakeStore([gene({ asset_id: 'g' }), capsule({ asset_id: 'c', gene: 'g' })]),
-    hubFetch: async (url, opts) => {
-      assert.equal(opts.headers.Authorization, 'Bearer oauth-access-token');
-      const message = JSON.parse(opts.body);
-      assert.equal(message.payload.signature, undefined);
-      seen.push(url);
-      if (url.endsWith('/a2a/validate')) {
-        return { ok: true, status: 200, json: async () => ({ payload: { valid: true } }) };
-      }
-      return { ok: true, status: 200, json: async () => ({ payload: { status: 'accepted' } }) };
-    },
-  });
-  assert.equal(actualCode, 0);
-  assert.equal(seen.some(url => url.endsWith('/a2a/validate')), true);
-  assert.equal(seen.some(url => url.endsWith('/a2a/publish')), true);
-  assert.equal(actual.json().status, 'accepted');
+    assert.equal(code, 1, row.name);
+    assert.equal(hubCalls, 0, row.name);
+    assert.equal(io.json().mode, row.mode, row.name);
+    assert.equal(io.json().reason, 'auth_required', row.name);
+  }
 });
 
 test('publish.v1 assets summary is generated from final publish payload', async () => {

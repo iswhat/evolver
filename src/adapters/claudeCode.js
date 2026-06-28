@@ -5,8 +5,37 @@ const { mergeJsonFile, copyHookScripts, appendSectionToFile, removeHookScripts, 
 const HOOK_SCRIPTS_DIR_NAME = 'hooks';
 const EVOLVER_MARKER = '<!-- evolver-evolution-memory -->';
 
-function buildClaudeHooks(evolverRoot) {
-  const scriptsBase = '.claude/hooks';
+function shellSingleQuote(value) {
+  return `'${String(value).replace(/'/g, "'\\''")}'`;
+}
+
+function quoteEvalScript(script) {
+  if (process.platform === 'win32') {
+    if (script.includes('"')) {
+      throw new Error('unexpected double quote in generated hook wrapper');
+    }
+    return `"${script}"`;
+  }
+  return shellSingleQuote(script);
+}
+
+function buildSafeNodeHookCommand(scriptPath) {
+  const encodedPath = Buffer.from(String(scriptPath), 'utf8').toString('base64');
+  const js = [
+    "const {spawnSync}=require('child_process')",
+    `const p=Buffer.from('${encodedPath}','base64').toString('utf8')`,
+    "const r=spawnSync(process.execPath,[p],{stdio:'inherit',shell:false})",
+    "if(r.error){throw r.error}",
+    'process.exit(r.status == null ? 1 : r.status)',
+  ].join(';');
+  return `node -e ${quoteEvalScript(js)} ${path.basename(scriptPath)}`;
+}
+
+function buildClaudeHooks(evolverRoot, configRoot) {
+  const scriptsBase = configRoot
+    ? path.join(configRoot, '.claude', 'hooks')
+    : path.join('.claude', 'hooks');
+  const hookCommand = (scriptName) => buildSafeNodeHookCommand(path.join(scriptsBase, scriptName));
   return {
     hooks: {
       SessionStart: [
@@ -14,7 +43,7 @@ function buildClaudeHooks(evolverRoot) {
           hooks: [
             {
               type: 'command',
-              command: `node ${scriptsBase}/evolver-session-start.js`,
+              command: hookCommand('evolver-session-start.js'),
               timeout: 3,
             },
           ],
@@ -32,7 +61,7 @@ function buildClaudeHooks(evolverRoot) {
               // ABOVE that watchdog, so the host never kills the script
               // mid-write. A stuck/slow recall can never block or erase the
               // user's prompt.
-              command: `node ${scriptsBase}/evolver-task-recall.js`,
+              command: hookCommand('evolver-task-recall.js'),
               timeout: 5,
             },
           ],
@@ -44,7 +73,7 @@ function buildClaudeHooks(evolverRoot) {
           hooks: [
             {
               type: 'command',
-              command: `node ${scriptsBase}/evolver-signal-detect.js`,
+              command: hookCommand('evolver-signal-detect.js'),
               timeout: 2,
             },
           ],
@@ -55,7 +84,7 @@ function buildClaudeHooks(evolverRoot) {
           hooks: [
             {
               type: 'command',
-              command: `node ${scriptsBase}/evolver-session-end.js`,
+              command: hookCommand('evolver-session-end.js'),
               timeout: 8,
             },
           ],
@@ -99,7 +128,7 @@ function install({ configRoot, evolverRoot, force }) {
 
   fs.mkdirSync(claudeDir, { recursive: true });
 
-  const hooksCfg = buildClaudeHooks(evolverRoot);
+  const hooksCfg = buildClaudeHooks(evolverRoot, configRoot);
   mergeJsonFile(settingsPath, hooksCfg);
   console.log('[claude-code] Wrote ' + settingsPath);
 

@@ -144,8 +144,8 @@ function buildMessagesHandler({ anthropicProxy, logger, routerEnabled, traceStor
   return async ({ body, headers }) => {
     const inboundHeaders = headers || {};
     // x-api-key is satisfied by either the inbound header OR a proxy-side
-    // ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN env (token mediation, see
-    // _proxyAnthropic). The proxy server itself has already auth-checked
+    // EVOMAP_ANTHROPIC_API_KEY / ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN env
+    // (token mediation, see _proxyAnthropic). The proxy server itself has already auth-checked
     // `Authorization: Bearer <proxy_token>` before reaching this handler.
     //
     // Bedrock upstream uses SigV4 with AWS_* env, so neither inbound
@@ -161,7 +161,8 @@ function buildMessagesHandler({ anthropicProxy, logger, routerEnabled, traceStor
     if (upstreamMode !== 'bedrock') {
       const hasInboundKey = !!inboundHeaders['x-api-key'];
       const hasProxyEnvCreds = !!(
-        process.env.ANTHROPIC_API_KEY
+        process.env.EVOMAP_ANTHROPIC_API_KEY
+        || process.env.ANTHROPIC_API_KEY
         || process.env.EVOMAP_ANTHROPIC_AUTH_TOKEN
         || (process.env.EVOMAP_PROXY_AUTO_INJECTED === '1' ? '' : process.env.ANTHROPIC_AUTH_TOKEN)
       );

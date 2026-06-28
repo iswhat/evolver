@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { PROXY_PROTOCOL_VERSION } = require('../mailbox/store');
+const { readMailboxStateFile } = require('../mailbox/state');
 const { buildEnvelope } = require('../envelope');
 const crypto = require('crypto');
 const {
@@ -601,6 +602,23 @@ class LifecycleManager {
         return storeSecret;
       }
       if (validNodeSecret(envSecret)) {
+        const diskRotated = this._latestDiskHubRotatedSecret();
+        if (diskRotated) {
+          this._setNodeSecretState({
+            secret: diskRotated.secret,
+            version: diskRotated.version ? String(diskRotated.version) : '',
+            source: 'hub_rotate',
+            envSuppressed: this.store.getState('node_secret_env_suppressed') || '',
+          });
+          if (!this._storeSourceLogged) {
+            this._storeSourceLogged = true;
+            this.logger.warn(
+              '[lifecycle] MailboxStore memory differs from disk hub-rotated node_secret; ' +
+                'using disk value and treating env as stale.'
+            );
+          }
+          return diskRotated.secret;
+        }
         this._syncEnvNodeSecretToStore(envSecret);
         if (!this._envOverrideLogged) {
           this._envOverrideLogged = true;
@@ -618,14 +636,38 @@ class LifecycleManager {
     return storeSecret || envSecret || null;
   }
 
+  _latestDiskHubRotatedSecret() {
+    const file = this.store && this.store._stateFile;
+    if (!file) return null;
+    const state = readMailboxStateFile(file);
+    const secret = typeof state?.node_secret === 'string' ? state.node_secret.trim() : null;
+    if (!validNodeSecret(secret) || state?.node_secret_source !== 'hub_rotate') return null;
+    return {
+      secret,
+      version: parseNodeSecretVersion(state.node_secret_version),
+    };
+  }
+
   _syncEnvNodeSecretToStore(envSecret) {
     const envVersion = parseNodeSecretVersion(process.env.A2A_NODE_SECRET_VERSION || process.env.EVOMAP_NODE_SECRET_VERSION);
-    this.store.setState('node_secret', envSecret);
-    this.store.setState('node_secret_version', envVersion ? String(envVersion) : '');
-    // Mark the new store value as env-seeded so a future rotation can
-    // distinguish "operator pasted this in" from "hub returned this".
-    this.store.setState('node_secret_source', 'env_seed');
+    this._setNodeSecretState({
+      secret: envSecret,
+      version: envVersion ? String(envVersion) : '',
+      source: 'env_seed',
+      envSuppressed: '',
+    });
     this._clearEnvSecretSuppression();
+  }
+
+  _setNodeSecretState({ secret = '', version = '', source = '', envSuppressed = '' } = {}) {
+    if (this.store && typeof this.store.setNodeSecretState === 'function') {
+      this.store.setNodeSecretState({ secret, version, source, envSuppressed });
+      return;
+    }
+    this.store.setState('node_secret', secret);
+    this.store.setState('node_secret_version', version ? String(version) : '');
+    this.store.setState('node_secret_source', source);
+    this.store.setState('node_secret_env_suppressed', envSuppressed);
   }
 
   _effectiveEnvNodeSecret() {
@@ -811,11 +853,6 @@ class LifecycleManager {
       const secret = data?.payload?.node_secret || data?.node_secret || null;
       const secretVersion = parseNodeSecretVersion(data?.payload?.node_secret_version || data?.node_secret_version);
       if (secret && validNodeSecret(secret)) {
-        this.store.setState('node_secret', secret);
-        // Tag the store entry so the next process that boots into a stale
-        // shell env can recognise this value as hub-authoritative and
-        // refuse to overwrite it (see _resolveNodeSecret above).
-        this.store.setState('node_secret_source', 'hub_rotate');
         // Hub just handed us a fresh secret. Whatever sits in
         // A2A_NODE_SECRET is now older than the store, so suppress the
         // env-wins reconciliation in _resolveNodeSecret for the rest of
@@ -830,9 +867,14 @@ class LifecycleManager {
         } else {
           this._clearEnvSecretSuppression();
         }
+        this._setNodeSecretState({
+          secret,
+          version: secretVersion ? String(secretVersion) : '',
+          source: 'hub_rotate',
+          envSuppressed: this.store.getState('node_secret_env_suppressed') || '',
+        });
         this.logger.log('[lifecycle] new node_secret stored from hello response');
-      }
-      if (secretVersion) {
+      } else if (secretVersion) {
         this.store.setState('node_secret_version', String(secretVersion));
       } else {
         this.store.setState('node_secret_version', '');
@@ -1001,10 +1043,34 @@ class LifecycleManager {
    */
   _dropLocalSecret(reason) {
     this.logger.warn(`[lifecycle] dropping cached node_secret (reason=${reason}); next hello will run unauthenticated`);
-    try { this.store.setState('node_secret', ''); } catch { /* best-effort */ }
-    try { this.store.setState('node_secret_version', ''); } catch { /* best-effort */ }
-    // Clear the source tag too -- nothing is stored, nothing to attribute.
-    try { this.store.setState('node_secret_source', ''); } catch { /* best-effort */ }
+    const diskRotated = this._latestDiskHubRotatedSecret();
+    const storeSecret = this.store.getState('node_secret') || null;
+    if (diskRotated && diskRotated.secret !== storeSecret) {
+      try {
+        this._setNodeSecretState({
+          secret: diskRotated.secret,
+          version: diskRotated.version ? String(diskRotated.version) : '',
+          source: 'hub_rotate',
+          envSuppressed: this.store.getState('node_secret_env_suppressed') || '',
+        });
+        this.logger.warn('[lifecycle] local in-memory node_secret is stale; preserving newer disk hub-rotated secret');
+        return;
+      } catch (err) {
+        const reason = err && (err.code || err.name) ? (err.code || err.name) : 'error';
+        this.logger.warn(`[lifecycle] failed to sync newer disk hub-rotated node_secret into memory (reason=${reason})`);
+      }
+    }
+    try {
+      this._setNodeSecretState({
+        secret: '',
+        version: '',
+        source: '',
+        envSuppressed: this.store.getState('node_secret_env_suppressed') || '',
+      });
+    } catch (err) {
+      const reason = err && (err.code || err.name || err.message) ? (err.code || err.name || err.message) : 'error';
+      this.logger.warn(`[lifecycle] failed to clear local node_secret state (reason=${reason})`);
+    }
     // Suppress only the exact env secret that was just proven stale. If no
     // env secret is present, do not leave a marker that blocks a future reset.
     this._markCurrentEnvSecretSuppressed();

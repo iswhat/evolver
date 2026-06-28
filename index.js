@@ -464,6 +464,68 @@ function writeCycleProgressAtomic(progressPath, fields) {
   }
 }
 
+function handleCycleTimeout({ error, cycleProgressPath, progressFields, suicideEnabled, args, logPath, spawnReplacementFn }) {
+  const msg = error && error.message ? String(error.message) : String(error);
+  console.error('[Daemon] ' + msg);
+
+  if (!suicideEnabled) {
+    console.warn('[Daemon] Cycle hard-timeout treated as non-fatal because EVOLVER_SUICIDE=false.');
+    writeCycleProgressAtomic(cycleProgressPath, Object.assign({}, progressFields, {
+      phase: 'cycle_timeout_nonfatal',
+    }));
+    return { action: 'continue' };
+  }
+
+  writeCycleProgressAtomic(cycleProgressPath, Object.assign({}, progressFields, {
+    phase: 'cycle_timeout_respawn',
+  }));
+  spawnReplacementFn({
+    reason: 'cycle_hard_timeout',
+    args: args,
+    logPath: logPath,
+  });
+  return { action: 'respawn' };
+}
+
+function logTimedOutEvolveRejection(error, logFn) {
+  const lateMsg = error && error.message ? String(error.message) : String(error);
+  try {
+    logFn('[Daemon] Timed-out evolve.run() eventually rejected: ' + lateMsg);
+  } catch (logError) {
+    const fallbackMsg = logError && logError.message ? String(logError.message) : String(logError);
+    console.error('[Daemon] Failed to log timed-out evolve.run() rejection: ' + fallbackMsg);
+  }
+}
+
+function observeTimedOutEvolvePromise(evolvePromise, logFn = console.error) {
+  if (!evolvePromise || typeof evolvePromise.then !== 'function') {
+    return { status: 'ignored' };
+  }
+
+  Promise.resolve(evolvePromise).then(
+    function () {},
+    function (error) {
+      logTimedOutEvolveRejection(error, logFn);
+    }
+  );
+
+  return { status: 'observing' };
+}
+
+async function waitForTimedOutEvolvePromise(evolvePromise, logFn = console.error) {
+  if (!evolvePromise || typeof evolvePromise.then !== 'function') {
+    return { status: 'ignored' };
+  }
+
+  try {
+    await evolvePromise;
+    return { status: 'resolved' };
+  } catch (error) {
+    logTimedOutEvolveRejection(error, logFn);
+    return { status: 'rejected' };
+  }
+}
+
 function getLastSignals(statePath) {
   try {
     const st = readJsonSafe(statePath);
@@ -1357,6 +1419,7 @@ async function main() {
             const { startProxy } = require('./src/proxy');
             const proxyInfo = await startProxy({
               hubUrl: process.env.A2A_HUB_URL,
+              clientSettings: {},
             });
             console.log('[Proxy] Started on ' + proxyInfo.url);
             try {
@@ -1592,13 +1655,12 @@ async function main() {
             if (typeof progressTicker.unref === 'function') progressTicker.unref();
           }
           let cycleTimeoutHandle = null;
-          let cycleTimedOut = false;
+          let evolvePromise = null;
           try {
-            const evolvePromise = evolve.run();
+            evolvePromise = evolve.run();
             if (cycleTimeoutEnabled && cycleTimeoutMs > 0) {
               const timeoutPromise = new Promise(function (_, reject) {
                 cycleTimeoutHandle = setTimeout(function () {
-                  cycleTimedOut = true;
                   reject(new CycleTimeoutError(cycleTimeoutMs, 'evolve.run', cycleCount));
                 }, cycleTimeoutMs);
                 if (cycleTimeoutHandle && typeof cycleTimeoutHandle.unref === 'function') cycleTimeoutHandle.unref();
@@ -1621,25 +1683,32 @@ async function main() {
           } catch (error) {
             const msg = error && error.message ? String(error.message) : String(error);
             if (error && error.code === 'CYCLE_TIMEOUT') {
-              console.error('[Daemon] ' + msg);
               if (progressTicker) { clearInterval(progressTicker); progressTicker = null; }
               if (cycleTimeoutHandle) { clearTimeout(cycleTimeoutHandle); cycleTimeoutHandle = null; }
-              writeCycleProgressAtomic(cycleProgressPath, {
-                pid: process.pid,
-                outer_cycle: cycleCount,
-                inner_cycle: cycleCount,
-                started_at: t0,
-                phase: 'cycle_timeout_respawn',
-              });
-              spawnReplacementProcess({
-                reason: 'cycle_hard_timeout',
-                args: args,
+              const timeoutAction = handleCycleTimeout({
+                error,
+                cycleProgressPath,
+                progressFields: {
+                  pid: process.pid,
+                  outer_cycle: cycleCount,
+                  inner_cycle: cycleCount,
+                  started_at: t0,
+                },
+                suicideEnabled,
+                args,
                 logPath: getEvolverLogPath(),
+                spawnReplacementFn: spawnReplacementProcess,
               });
-              releaseLock();
-              process.exit(1);
+              if (timeoutAction.action === 'respawn') {
+                releaseLock();
+                process.exit(1);
+              }
+              if (timeoutAction.action === 'continue') {
+                await waitForTimedOutEvolvePromise(evolvePromise);
+              }
+            } else {
+              console.error(`Evolution cycle failed: ${msg}`);
             }
-            console.error(`Evolution cycle failed: ${msg}`);
           } finally {
             if (progressTicker) { clearInterval(progressTicker); progressTicker = null; }
             if (cycleTimeoutHandle) { clearTimeout(cycleTimeoutHandle); cycleTimeoutHandle = null; }
@@ -3328,5 +3397,8 @@ module.exports = {
   parseBoolEnv,
   CycleTimeoutError,
   writeCycleProgressAtomic,
+  handleCycleTimeout,
+  observeTimedOutEvolvePromise,
+  waitForTimedOutEvolvePromise,
   spawnReplacementProcess,
 };

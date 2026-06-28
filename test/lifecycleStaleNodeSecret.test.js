@@ -17,8 +17,12 @@
 const test = require('node:test');
 const assert = require('node:assert');
 const crypto = require('node:crypto');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const { LifecycleManager } = require('../src/proxy/lifecycle/manager');
+const { MailboxStore } = require('../src/proxy/mailbox/store');
 
 // LifecycleManager calls hubFetch internally; tests here stub global.fetch
 // and pass a fake `https://example.test` hubUrl. In insecure mode hubFetch
@@ -166,6 +170,120 @@ test('nodeSecret getter: store wins when its value was last written by hub_rotat
   } finally {
     if (original === undefined) delete process.env.A2A_NODE_SECRET;
     else process.env.A2A_NODE_SECRET = original;
+  }
+});
+
+test('nodeSecret getter: stale in-memory env_seed cannot overwrite newer disk hub_rotate', () => {
+  const originalSecret = process.env.A2A_NODE_SECRET;
+  const originalVersion = process.env.A2A_NODE_SECRET_VERSION;
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lifecycle-secret-race-'));
+  const dir = path.join(root, 'mailbox');
+  const oldStore = new MailboxStore(dir);
+  try {
+    process.env.A2A_NODE_SECRET = VALID_HEX64_A;
+    process.env.A2A_NODE_SECRET_VERSION = '1';
+    oldStore.setNodeSecretState({
+      secret: VALID_HEX64_C,
+      version: '2',
+      source: 'env_seed',
+      envSuppressed: '',
+    });
+
+    const freshStore = new MailboxStore(dir);
+    freshStore.setNodeSecretState({
+      secret: VALID_HEX64_B,
+      version: '11',
+      source: 'hub_rotate',
+      envSuppressed: '',
+    });
+    freshStore.close();
+
+    const logger = silentLogger();
+    const mgr = new LifecycleManager({ hubUrl: 'https://example.test', store: oldStore, logger });
+    assert.strictEqual(mgr.nodeSecret, VALID_HEX64_B, 'newer disk hub_rotate secret must win');
+    assert.strictEqual(mgr.nodeSecretVersion, 11);
+
+    const finalState = JSON.parse(fs.readFileSync(path.join(dir, 'state.json'), 'utf8'));
+    assert.strictEqual(finalState.node_secret, VALID_HEX64_B);
+    assert.strictEqual(finalState.node_secret_version, '11');
+    assert.strictEqual(finalState.node_secret_source, 'hub_rotate');
+    assert.ok(
+      logger._calls.warn.some((m) => m.includes('MailboxStore memory differs from disk hub-rotated node_secret')),
+      'should warn that stale in-memory state was ignored'
+    );
+  } finally {
+    oldStore.close();
+    fs.rmSync(root, { recursive: true, force: true });
+    if (originalSecret === undefined) delete process.env.A2A_NODE_SECRET;
+    else process.env.A2A_NODE_SECRET = originalSecret;
+    if (originalVersion === undefined) delete process.env.A2A_NODE_SECRET_VERSION;
+    else process.env.A2A_NODE_SECRET_VERSION = originalVersion;
+  }
+});
+
+test('_dropLocalSecret: stale in-memory store syncs newer disk hub_rotate before building headers', () => {
+  const originalSecret = process.env.A2A_NODE_SECRET;
+  const originalEvoSecret = process.env.EVOMAP_NODE_SECRET;
+  const originalVersion = process.env.A2A_NODE_SECRET_VERSION;
+  const originalEvoVersion = process.env.EVOMAP_NODE_SECRET_VERSION;
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lifecycle-secret-drop-race-'));
+  const dir = path.join(root, 'mailbox');
+  const oldStore = new MailboxStore(dir);
+  try {
+    process.env.A2A_NODE_SECRET = VALID_HEX64_A;
+    delete process.env.EVOMAP_NODE_SECRET;
+    process.env.A2A_NODE_SECRET_VERSION = '2';
+    delete process.env.EVOMAP_NODE_SECRET_VERSION;
+
+    oldStore.setNodeSecretState({
+      secret: VALID_HEX64_A,
+      version: '2',
+      source: 'hub_rotate',
+      envSuppressed: 'existing-marker',
+    });
+
+    const freshStore = new MailboxStore(dir);
+    freshStore.setNodeSecretState({
+      secret: VALID_HEX64_B,
+      version: '11',
+      source: 'hub_rotate',
+      envSuppressed: '',
+    });
+    freshStore.close();
+
+    const logger = silentLogger();
+    const mgr = new LifecycleManager({ hubUrl: 'https://example.test', store: oldStore, logger });
+    const staleHeaders = mgr._buildHeaders();
+    assert.strictEqual(staleHeaders.Authorization, `Bearer ${VALID_HEX64_A}`);
+    assert.strictEqual(staleHeaders['X-EvoMap-Node-Secret-Version'], '2');
+
+    mgr._dropLocalSecret('node_secret_invalid');
+    const headers = mgr._buildHeaders();
+
+    assert.strictEqual(headers.Authorization, `Bearer ${VALID_HEX64_B}`);
+    assert.strictEqual(headers['X-EvoMap-Node-Secret-Version'], '11');
+    assert.strictEqual(oldStore.getState('node_secret'), VALID_HEX64_B);
+    assert.strictEqual(oldStore.getState('node_secret_version'), '11');
+    assert.strictEqual(oldStore.getState('node_secret_source'), 'hub_rotate');
+    assert.strictEqual(oldStore.getState('node_secret_env_suppressed'), 'existing-marker');
+    assert.ok(
+      logger._calls.warn.some((m) => m.includes('local in-memory node_secret is stale')),
+      'should warn without logging the secret value'
+    );
+    const logText = logger._calls.warn.concat(logger._calls.error, logger._calls.log).join('\n');
+    assert.strictEqual(logText.includes(VALID_HEX64_A), false, 'old raw secret must not be logged');
+    assert.strictEqual(logText.includes(VALID_HEX64_B), false, 'new raw secret must not be logged');
+  } finally {
+    oldStore.close();
+    fs.rmSync(root, { recursive: true, force: true });
+    if (originalSecret === undefined) delete process.env.A2A_NODE_SECRET;
+    else process.env.A2A_NODE_SECRET = originalSecret;
+    if (originalEvoSecret === undefined) delete process.env.EVOMAP_NODE_SECRET;
+    else process.env.EVOMAP_NODE_SECRET = originalEvoSecret;
+    if (originalVersion === undefined) delete process.env.A2A_NODE_SECRET_VERSION;
+    else process.env.A2A_NODE_SECRET_VERSION = originalVersion;
+    if (originalEvoVersion === undefined) delete process.env.EVOMAP_NODE_SECRET_VERSION;
+    else process.env.EVOMAP_NODE_SECRET_VERSION = originalEvoVersion;
   }
 });
 

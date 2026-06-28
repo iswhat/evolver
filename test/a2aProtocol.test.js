@@ -37,6 +37,7 @@ const {
   _resetHubNodeSecretStateForTesting,
 } = require('../src/gep/a2aProtocol')._testing;
 const { computeAssetId } = require('../src/gep/contentHash');
+const { MailboxStore } = require('../src/proxy/mailbox/store');
 
 function suppressionMarker(secret) {
   return 'sha256:' + crypto.createHash('sha256').update(secret.toLowerCase()).digest('hex');
@@ -625,6 +626,26 @@ describe('node_secret_version hello compatibility', () => {
     fs.rmSync(tempHome, { recursive: true, force: true });
   });
 
+  function mailboxDir() {
+    return path.join(process.env.EVOLVER_HOME, 'mailbox');
+  }
+
+  function mailboxStatePath() {
+    return path.join(mailboxDir(), 'state.json');
+  }
+
+  function readMailboxState() {
+    return JSON.parse(fs.readFileSync(mailboxStatePath(), 'utf8'));
+  }
+
+  function seedMailboxSecret(secret, version, source) {
+    const store = new MailboxStore(mailboxDir());
+    store.setState('node_secret', secret);
+    store.setState('node_secret_version', version);
+    store.setState('node_secret_source', source);
+    return store;
+  }
+
   it('clears persisted node_secret_version when hello succeeds without a version', async () => {
     global.fetch = async () => ({
       ok: true,
@@ -767,6 +788,93 @@ describe('node_secret_version hello compatibility', () => {
     assert.equal(fs.readFileSync(path.join(process.env.EVOLVER_HOME, 'node_secret_version'), 'utf8'), '9');
   });
 
+  it('uses newer legacy hub_rotate version when mailbox has the same secret at an older version', async () => {
+    var captured = null;
+    fs.writeFileSync(path.join(process.env.EVOLVER_HOME, 'node_secret_version'), '9');
+    fs.writeFileSync(path.join(process.env.EVOLVER_HOME, 'node_secret_source'), 'hub_rotate');
+    seedMailboxSecret('a'.repeat(64), '5', 'hub_rotate').close();
+    _resetHubNodeSecretStateForTesting();
+    global.fetch = async (url, opts) => {
+      captured = { url, opts, body: JSON.parse(opts.body) };
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ status: 'ok' }),
+        text: async () => '',
+      };
+    };
+
+    assert.equal(getHubNodeSecret(), 'a'.repeat(64));
+    assert.equal(getHubNodeSecretVersion(), 9);
+    var result = await sendHeartbeat();
+
+    assert.equal(result.ok, true);
+    assert.equal(captured.opts.headers.Authorization, 'Bearer ' + 'a'.repeat(64));
+    assert.equal(captured.opts.headers['X-EvoMap-Node-Secret-Version'], '9');
+    assert.equal(captured.body.node_secret_version, 9);
+    assert.equal(captured.body.meta.node_secret_version, 9);
+  });
+
+  it('uses newer legacy hub_rotate tuple when mailbox has a different older secret', async () => {
+    var captured = null;
+    fs.writeFileSync(path.join(process.env.EVOLVER_HOME, 'node_secret'), 'c'.repeat(64));
+    fs.writeFileSync(path.join(process.env.EVOLVER_HOME, 'node_secret_version'), '9');
+    fs.writeFileSync(path.join(process.env.EVOLVER_HOME, 'node_secret_source'), 'hub_rotate');
+    seedMailboxSecret('b'.repeat(64), '5', 'hub_rotate').close();
+    _resetHubNodeSecretStateForTesting();
+    global.fetch = async (url, opts) => {
+      captured = { url, opts, body: JSON.parse(opts.body) };
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ status: 'ok' }),
+        text: async () => '',
+      };
+    };
+
+    assert.equal(getHubNodeSecret(), 'c'.repeat(64));
+    assert.equal(getHubNodeSecretVersion(), 9);
+    var result = await sendHeartbeat();
+
+    assert.equal(result.ok, true);
+    assert.equal(captured.opts.headers.Authorization, 'Bearer ' + 'c'.repeat(64));
+    assert.equal(captured.opts.headers['X-EvoMap-Node-Secret-Version'], '9');
+    assert.equal(captured.body.node_secret_version, 9);
+    assert.equal(captured.body.meta.node_secret_version, 9);
+  });
+
+  it('syncs hello-only node_secret_version to legacy and mailbox without changing the secret', async () => {
+    fs.writeFileSync(path.join(process.env.EVOLVER_HOME, 'node_secret'), 'b'.repeat(64));
+    fs.writeFileSync(path.join(process.env.EVOLVER_HOME, 'node_secret_version'), '4');
+    fs.writeFileSync(path.join(process.env.EVOLVER_HOME, 'node_secret_source'), 'hub_rotate');
+    seedMailboxSecret('b'.repeat(64), '4', 'hub_rotate').close();
+    _resetHubNodeSecretStateForTesting();
+    global.fetch = async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        payload: {
+          status: 'acknowledged',
+          node_secret_version: 12,
+          your_node_id: 'node_aaaaaaaaaaaa',
+        },
+      }),
+      text: async () => '',
+    });
+
+    const result = await sendHelloToHub();
+    const state = readMailboxState();
+
+    assert.equal(result.ok, true);
+    assert.equal(getHubNodeSecret(), 'b'.repeat(64));
+    assert.equal(getHubNodeSecretVersion(), 12);
+    assert.equal(fs.readFileSync(path.join(process.env.EVOLVER_HOME, 'node_secret'), 'utf8'), 'b'.repeat(64));
+    assert.equal(fs.readFileSync(path.join(process.env.EVOLVER_HOME, 'node_secret_version'), 'utf8'), '12');
+    assert.equal(state.node_secret, 'b'.repeat(64));
+    assert.equal(state.node_secret_version, '12');
+    assert.equal(state.node_secret_source, 'hub_rotate');
+  });
+
   it('sanitizes sendHelloToHub non-2xx Hub response logs', async () => {
     const raw = {
       nodeSecret: 'f'.repeat(64),
@@ -888,6 +996,74 @@ describe('node_secret_version hello compatibility', () => {
     assert.equal(fs.readFileSync(path.join(process.env.EVOLVER_HOME, 'node_secret_source'), 'utf8'), 'hub_rotate');
     assert.equal(getHubNodeSecret(), 'b'.repeat(64));
     assert.equal(getHubNodeSecretVersion(), 9);
+  });
+
+  it('keeps Hub-rotated mailbox secret when an old MailboxStore writes unrelated state', async () => {
+    const oldStore = seedMailboxSecret('a'.repeat(64), '1', 'hub_rotate');
+    try {
+      global.fetch = async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          payload: {
+            status: 'acknowledged',
+            node_secret: 'b'.repeat(64),
+            node_secret_version: 11,
+            your_node_id: 'node_aaaaaaaaaaaa',
+          },
+        }),
+        text: async () => '',
+      });
+
+      const result = await rotateNodeSecret();
+      assert.equal(result.ok, true);
+
+      oldStore.setState('last_sync_error', 'dummy_unrelated_error');
+      const state = readMailboxState();
+
+      assert.equal(state.node_secret, 'b'.repeat(64));
+      assert.equal(state.node_secret_version, '11');
+      assert.equal(state.node_secret_source, 'hub_rotate');
+      assert.equal(state.last_sync_error, 'dummy_unrelated_error');
+      assert.equal(oldStore.getState('node_secret'), 'b'.repeat(64));
+      assert.equal(oldStore.getState('node_secret_version'), '11');
+    } finally {
+      oldStore.close();
+    }
+  });
+
+  it('keeps divergence-cleared mailbox secret when an old MailboxStore writes a cursor', async () => {
+    const oldStore = seedMailboxSecret('a'.repeat(64), '1', 'hub_rotate');
+    try {
+      global.fetch = async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          payload: {
+            status: 'rejected',
+            reason: 'node_secret_invalid',
+          },
+        }),
+        text: async () => '',
+      });
+
+      const result = await rotateNodeSecret();
+      assert.equal(result.ok, false);
+      assert.equal(result.error, 'secret_diverged_cleared');
+
+      oldStore.setCursor('evomap-hub:outbound_cursor', 'cursor_after_clear');
+      const state = readMailboxState();
+
+      assert.equal(state.node_secret, '');
+      assert.equal(state.node_secret_version, '');
+      assert.equal(state.node_secret_source, '');
+      assert.equal(state.node_secret_env_suppressed, '');
+      assert.equal(state['cursor:evomap-hub:outbound_cursor'], 'cursor_after_clear');
+      assert.equal(oldStore.getState('node_secret'), '');
+      assert.equal(oldStore.getState('node_secret_version'), '');
+    } finally {
+      oldStore.close();
+    }
   });
 
   it('clears node_secret_source when divergence clears local secret', async () => {

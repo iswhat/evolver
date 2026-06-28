@@ -13,6 +13,7 @@ const MAX_ASSETS = 50;
 const ASSET_FLAGS = new Set(['--asset', '--gene', '--capsule', '--event']);
 const ASSET_FLAG_LIST = Array.from(ASSET_FLAGS);
 const MACHINE_JSON_STDOUT_WRITE = Symbol('machineJsonStdoutWrite');
+const NODE_SCOPED_ENDPOINT_PATHS = new Set(['/a2a/fetch', '/a2a/validate', '/a2a/publish']);
 const REUSE_FAILURE_REASONS = new Set([
   'missing_id',
   'cli_unavailable',
@@ -593,7 +594,7 @@ async function postEnvelope(endpointPath, message, deps) {
   const hubUrl = getHubUrl(deps);
   if (!hubUrl) throw new ContractError('auth_required', 'Hub URL is required');
   const a2a = deps.a2a || require('./a2aProtocol');
-  const headers = buildHubHeadersSafe(a2a);
+  const headers = buildEnvelopeHeaders(endpointPath, deps, a2a);
   if (!hasAuthorizationHeader(headers)) throw new ContractError('auth_required', 'Hub authentication required');
   const fetchImpl = deps.hubFetch || require('./hubFetch').hubFetch;
   const timeoutMs = deps.timeoutMs || 30000;
@@ -965,6 +966,41 @@ function hasHubAuthorization(deps) {
   if (getHubNodeSecret(deps)) return true;
   const a2a = deps.a2a || require('./a2aProtocol');
   return hasAuthorizationHeader(buildHubHeadersSafe(a2a));
+}
+
+function buildEnvelopeHeaders(endpointPath, deps, a2a) {
+  if (NODE_SCOPED_ENDPOINT_PATHS.has(endpointPath)) {
+    return buildNodeScopedHubHeadersSafe(a2a, deps);
+  }
+  return buildHubHeadersSafe(a2a);
+}
+
+function buildNodeScopedHubHeadersSafe(a2a, deps) {
+  if (!deps || deps.nodeSecret === undefined) {
+    try {
+      if (typeof a2a.buildNodeScopedHubHeaders === 'function') {
+        const headers = a2a.buildNodeScopedHubHeaders() || {};
+        if (hasAuthorizationHeader(headers)) return headers;
+      }
+    } catch (_) {}
+  }
+  const nodeSecret = getHubNodeSecret(deps || {});
+  if (!nodeSecret) return {};
+  const headers = {
+    'Content-Type': 'application/json',
+    Authorization: 'Bearer ' + nodeSecret,
+  };
+  const secretVersion = getHubNodeSecretVersionSafe(a2a);
+  if (secretVersion) headers['X-EvoMap-Node-Secret-Version'] = String(secretVersion);
+  return headers;
+}
+
+function getHubNodeSecretVersionSafe(a2a) {
+  try {
+    return typeof a2a.getHubNodeSecretVersion === 'function' ? a2a.getHubNodeSecretVersion() : null;
+  } catch (_) {
+    return null;
+  }
 }
 
 function buildHubHeadersSafe(a2a) {

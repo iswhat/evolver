@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const { spawnSync } = require('child_process');
 const { canCreateSymlinks } = require('./helpers/symlink');
 
 // Symlink-rejection tests need to plant a real symlink before exercising
@@ -24,6 +25,49 @@ function cleanup(dir) {
   try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
 }
 
+function withEnv(patch, fn) {
+  const oldEnv = {};
+  const keys = [
+    'CLAUDECODE',
+    'CLAUDE_CODE_ENTRYPOINT',
+    'CLAUDE_PROJECT_DIR',
+    'CURSOR_TRACE_ID',
+    'CURSOR_SESSION_ID',
+    'CURSOR_PROJECT_DIR',
+    'TERM_PROGRAM',
+    ...Object.keys(patch),
+  ];
+  for (const key of keys) {
+    oldEnv[key] = process.env[key];
+    delete process.env[key];
+  }
+  for (const [key, value] of Object.entries(patch)) {
+    if (value !== undefined) process.env[key] = value;
+  }
+
+  try {
+    return fn();
+  } finally {
+    for (const key of keys) {
+      if (oldEnv[key] === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = oldEnv[key];
+      }
+    }
+  }
+}
+
+function withHome(home, fn) {
+  const originalHome = os.homedir;
+  os.homedir = () => home;
+  try {
+    return fn();
+  } finally {
+    os.homedir = originalHome;
+  }
+}
+
 // -- hookAdapter --
 
 describe('hookAdapter', () => {
@@ -32,7 +76,11 @@ describe('hookAdapter', () => {
       const tmp = makeTmpDir();
       try {
         fs.mkdirSync(path.join(tmp, '.cursor'), { recursive: true });
-        assert.equal(hookAdapter.detectPlatform(tmp), 'cursor');
+        // Clear host env signals so directory detection is exercised even when
+        // the suite runs from inside a Claude Code / Cursor session (#590).
+        withEnv({}, () => {
+          assert.equal(hookAdapter.detectPlatform(tmp), 'cursor');
+        });
       } finally { cleanup(tmp); }
     });
 
@@ -40,7 +88,9 @@ describe('hookAdapter', () => {
       const tmp = makeTmpDir();
       try {
         fs.mkdirSync(path.join(tmp, '.claude'), { recursive: true });
-        assert.equal(hookAdapter.detectPlatform(tmp), 'claude-code');
+        withEnv({}, () => {
+          assert.equal(hookAdapter.detectPlatform(tmp), 'claude-code');
+        });
       } finally { cleanup(tmp); }
     });
 
@@ -48,7 +98,92 @@ describe('hookAdapter', () => {
       const tmp = makeTmpDir();
       try {
         fs.mkdirSync(path.join(tmp, '.codex'), { recursive: true });
-        assert.equal(hookAdapter.detectPlatform(tmp), 'codex');
+        withEnv({}, () => {
+          assert.equal(hookAdapter.detectPlatform(tmp), 'codex');
+        });
+      } finally { cleanup(tmp); }
+    });
+
+    it('prefers claude-code environment over home platform directories (#590)', () => {
+      const tmp = makeTmpDir();
+      try {
+        const cwd = path.join(tmp, 'project');
+        const home = path.join(tmp, 'home');
+        fs.mkdirSync(cwd, { recursive: true });
+        fs.mkdirSync(path.join(home, '.cursor'), { recursive: true });
+        fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+        withHome(home, () => withEnv({ CLAUDECODE: '1' }, () => {
+          assert.equal(hookAdapter.detectPlatform(cwd), 'claude-code');
+        }));
+      } finally { cleanup(tmp); }
+    });
+
+    it('prefers cursor environment over directory detection (#590)', () => {
+      const tmp = makeTmpDir();
+      try {
+        const cwd = path.join(tmp, 'project');
+        const home = path.join(tmp, 'home');
+        fs.mkdirSync(path.join(cwd, '.claude'), { recursive: true });
+        fs.mkdirSync(path.join(home, '.claude'), { recursive: true });
+        withHome(home, () => withEnv({ CURSOR_TRACE_ID: 'trace-1' }, () => {
+          assert.equal(hookAdapter.detectPlatform(cwd), 'cursor');
+        }));
+      } finally { cleanup(tmp); }
+    });
+
+    it('prefers CLAUDECODE over cursor environment signals', () => {
+      withEnv({
+        CLAUDECODE: '1',
+        CURSOR_TRACE_ID: 'trace-1',
+        TERM_PROGRAM: 'cursor',
+      }, () => {
+        assert.equal(hookAdapter.detectPlatformFromEnv(), 'claude-code');
+      });
+    });
+
+    it('prefers CLAUDE_CODE_ENTRYPOINT over cursor environment signals', () => {
+      withEnv({
+        CLAUDE_CODE_ENTRYPOINT: 'cli',
+        CURSOR_SESSION_ID: 'session-1',
+        CURSOR_PROJECT_DIR: '/tmp/cursor-project',
+      }, () => {
+        assert.equal(hookAdapter.detectPlatformFromEnv(), 'claude-code');
+      });
+    });
+
+    it('prefers cursor strong signals over CLAUDE_PROJECT_DIR compat alias', () => {
+      withEnv({
+        CURSOR_TRACE_ID: 'trace-1',
+        TERM_PROGRAM: 'cursor',
+        CLAUDE_PROJECT_DIR: '/tmp/cursor-compat-alias',
+      }, () => {
+        assert.equal(hookAdapter.detectPlatformFromEnv(), 'cursor');
+      });
+    });
+
+    it('keeps fallback directory detection when no host environment is present (#590)', () => {
+      const tmp = makeTmpDir();
+      try {
+        const cwd = path.join(tmp, 'project');
+        const home = path.join(tmp, 'home');
+        fs.mkdirSync(cwd, { recursive: true });
+        fs.mkdirSync(path.join(home, '.cursor'), { recursive: true });
+        withHome(home, () => withEnv({}, () => {
+          assert.equal(hookAdapter.detectPlatform(cwd), 'cursor');
+        }));
+      } finally { cleanup(tmp); }
+    });
+
+    it('keeps cwd detector precedence over home fallback without host env (#590)', () => {
+      const tmp = makeTmpDir();
+      try {
+        const cwd = path.join(tmp, 'project');
+        const home = path.join(tmp, 'home');
+        fs.mkdirSync(path.join(cwd, '.claude'), { recursive: true });
+        fs.mkdirSync(path.join(home, '.cursor'), { recursive: true });
+        withHome(home, () => withEnv({}, () => {
+          assert.equal(hookAdapter.detectPlatform(cwd), 'claude-code');
+        }));
       } finally { cleanup(tmp); }
     });
 
@@ -166,7 +301,6 @@ describe('hookAdapter', () => {
         // End-to-end: actually run the copied script. If `_runtimePaths.js`
         // is missing the require() at top of file would fail with
         // MODULE_NOT_FOUND and exit non-zero.
-        const { spawnSync } = require('child_process');
         const result = spawnSync('node', [path.join(destDir, 'evolver-session-start.js')], {
           input: '{}', encoding: 'utf8', timeout: 5000,
         });
@@ -189,7 +323,6 @@ describe('hookAdapter', () => {
         assert.ok(fs.existsSync(path.join(destDir, 'evolver-task-recall.js')),
           'evolver-task-recall.js must be copied by setup-hooks');
 
-        const { spawnSync } = require('child_process');
         const result = spawnSync('node', [path.join(destDir, 'evolver-task-recall.js')], {
           input: JSON.stringify({ prompt: 'add retry with backoff to the http client', session_id: 'sess-test' }),
           encoding: 'utf8',
@@ -794,6 +927,88 @@ describe('claudeCode adapter', () => {
       }
     }
     assert.equal(hooks.hooks.PostToolUse[0].matcher, 'Write');
+  });
+
+  it('writes safe absolute hook wrappers for Claude Code config paths with spaces (#590)', () => {
+    const tmp = makeTmpDir();
+    try {
+      const configRoot = path.join(tmp, 'Claude Project With Spaces');
+      const evolverRoot = path.resolve(__dirname, '..');
+      const result = claudeAdapter.install({ configRoot, evolverRoot, force: true });
+      assert.equal(result.ok, true);
+
+      const settings = JSON.parse(fs.readFileSync(path.join(configRoot, '.claude', 'settings.json'), 'utf8'));
+      const commands = [];
+      for (const matchers of Object.values(settings.hooks)) {
+        for (const matcher of matchers) {
+          for (const hook of matcher.hooks || []) {
+            commands.push(hook.command);
+          }
+        }
+      }
+
+      const scripts = [
+        'evolver-session-start.js',
+        'evolver-task-recall.js',
+        'evolver-signal-detect.js',
+        'evolver-session-end.js',
+      ];
+      assert.equal(commands.length, scripts.length);
+      for (const scriptName of scripts) {
+        const scriptPath = path.join(configRoot, '.claude', 'hooks', scriptName);
+        const command = commands.find(c => c.includes(scriptName));
+        assert.ok(command, `${scriptName} hook command must be present`);
+        assert.ok(!command.includes('node .claude/hooks/'), 'hook command must not use a relative script path');
+        assert.ok(!command.includes(scriptPath), `hook command must not expose raw script path ${scriptPath}`);
+        assert.match(command, /^node -e (["']).+\1 \S+\.js$/);
+      }
+    } finally { cleanup(tmp); }
+  });
+
+  it('does not expose shell-expanded path fragments in generated hook commands', () => {
+    const configRoot = path.join(
+      os.tmpdir(),
+      'Claude $(touch should-not-run) %TEMP% `touch should-not-run`'
+    );
+    const hooks = claudeAdapter.buildClaudeHooks('/evolver', configRoot);
+    const commands = Object.values(hooks.hooks)
+      .flatMap(matchers => matchers.flatMap(matcher => matcher.hooks || []))
+      .map(hook => hook.command);
+
+    assert.ok(commands.length > 0);
+    for (const command of commands) {
+      assert.ok(!command.includes('$('), 'command must not contain command-substitution syntax');
+      assert.ok(!command.includes('%TEMP%'), 'command must not contain Windows environment expansion syntax');
+      assert.ok(!command.includes('`'), 'command must not contain backtick command-substitution syntax');
+      assert.ok(!command.includes(configRoot), 'command must not expose the raw config root');
+    }
+  });
+
+  it('runs POSIX hook paths containing $() without shell expansion', { skip: process.platform === 'win32' }, () => {
+    const tmp = makeTmpDir();
+    try {
+      const proofPath = path.join(tmp, 'proof');
+      const configRoot = path.join(tmp, `Project $(touch ${proofPath})`);
+      const hookDir = path.join(configRoot, '.claude', 'hooks');
+      fs.mkdirSync(hookDir, { recursive: true });
+      const scriptPath = path.join(hookDir, 'evolver-session-start.js');
+      const ranPath = path.join(tmp, 'ran');
+      fs.writeFileSync(scriptPath, `require('fs').writeFileSync(${JSON.stringify(ranPath)}, 'ok')\n`);
+
+      const hooks = claudeAdapter.buildClaudeHooks('/evolver', configRoot);
+      const command = hooks.hooks.SessionStart[0].hooks[0].command;
+      assert.ok(!command.includes('$('), 'generated command must not contain raw $() path text');
+
+      const result = spawnSync('/bin/sh', ['-c', command], {
+        encoding: 'utf8',
+        // The wrapper cold-starts node twice (outer `node -e` + inner script),
+        // so keep a generous budget for slow/loaded CI machines.
+        timeout: 15000,
+      });
+      assert.equal(result.status, 0, `hook command should succeed. stderr=${result.stderr}`);
+      assert.ok(fs.existsSync(ranPath), 'hook script should execute via decoded path');
+      assert.ok(!fs.existsSync(proofPath), 'shell command substitution in the path must not execute');
+    } finally { cleanup(tmp); }
   });
 });
 

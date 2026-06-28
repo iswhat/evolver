@@ -118,6 +118,7 @@ function readBody(req) {
 
 describe('proxy /asset/* -> hub envelope wrapping (e2e)', () => {
   let hub, hubUrl, proxy, proxyUrl, dataDir;
+  let savedSettingsDir;
   const seen = { fetch: [], validate: [], search: [], record: [] };
 
   before(async () => {
@@ -183,6 +184,8 @@ describe('proxy /asset/* -> hub envelope wrapping (e2e)', () => {
     hubUrl = `http://127.0.0.1:${hub.address().port}`;
 
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'proxy-envelope-test-'));
+    savedSettingsDir = process.env.EVOLVER_SETTINGS_DIR;
+    process.env.EVOLVER_SETTINGS_DIR = path.join(dataDir, 'settings');
     const started = await startProxy({ hubUrl, dataDir, port: 39832, logger: silentLogger });
     proxy = started.proxy;
     proxyUrl = started.url;
@@ -191,6 +194,8 @@ describe('proxy /asset/* -> hub envelope wrapping (e2e)', () => {
   after(async () => {
     await proxy?.stop();
     await new Promise((resolve) => hub.close(resolve));
+    if (savedSettingsDir === undefined) delete process.env.EVOLVER_SETTINGS_DIR;
+    else process.env.EVOLVER_SETTINGS_DIR = savedSettingsDir;
     try { fs.rmSync(dataDir, { recursive: true }); } catch {}
   });
 

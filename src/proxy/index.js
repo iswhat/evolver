@@ -184,6 +184,7 @@ class EvoMapProxy {
     this.dataDir = opts.dataDir || opts.dbPath || _defaultDataDir();
     this.port = opts.port;
     this.logger = opts.logger || console;
+    this.clientSettings = opts.clientSettings || null;
     this._skillPath = opts.skillPath || null;
     this._anthropicBaseUrl = (opts.anthropicBaseUrl || process.env.EVOMAP_ANTHROPIC_BASE_URL || 'https://api.anthropic.com').replace(/\/+$/, '');
     this._openaiBaseUrl = String(opts.openaiBaseUrl || process.env.EVOMAP_OPENAI_BASE_URL || DEFAULT_OPENAI_BASE_URL).replace(/\/+$/, '');
@@ -396,6 +397,7 @@ class EvoMapProxy {
     this.server = new ProxyHttpServer(routes, {
       port: this.port,
       logger: this.logger,
+      clientSettings: this.clientSettings,
     });
 
     const serverInfo = await this.server.start();
@@ -462,7 +464,8 @@ class EvoMapProxy {
           || (stats.skipped || 0) > 0
           || (stats.duplicates || 0) > 0;
         if (!madeProgress) break;
-        if (stats.reasons?.max_pending_uploads || stats.reasons?.collection_disabled
+        if (stats.reasons?.max_pending_uploads || stats.reasons?.max_enqueue_bytes
+          || stats.reasons?.collection_disabled
           || stats.reasons?.missing_file || stats.reasons?.missing_store
           || stats.reasons?.read_failed || stats.reasons?.thrown) {
           break;
@@ -824,8 +827,9 @@ class EvoMapProxy {
   // here, so clients (e.g. Claude Code) can authenticate to the proxy
   // with `ANTHROPIC_AUTH_TOKEN=<proxy_token>` without losing the ability
   // to reach Anthropic upstream. When the client did not pass x-api-key,
-  // the proxy substitutes its own ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN
-  // env var on the upstream request. Env is read per-request so creds
+  // the proxy substitutes its own EVOMAP_ANTHROPIC_API_KEY /
+  // ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN env var on the upstream request.
+  // Env is read per-request so creds
   // can be hot-swapped without restart, matching the EVOMAP_MODEL_*
   // policy in README.
   async _proxyAnthropic(reqPath, body, opts = {}) {
@@ -846,8 +850,9 @@ class EvoMapProxy {
     }
 
     if (!fwd['x-api-key']) {
-      if (process.env.ANTHROPIC_API_KEY) {
-        fwd['x-api-key'] = process.env.ANTHROPIC_API_KEY;
+      const upstreamApiKey = process.env.EVOMAP_ANTHROPIC_API_KEY || process.env.ANTHROPIC_API_KEY;
+      if (upstreamApiKey) {
+        fwd['x-api-key'] = upstreamApiKey;
       } else {
         const upstreamAuthToken = process.env.EVOMAP_ANTHROPIC_AUTH_TOKEN
           || (process.env.EVOMAP_PROXY_AUTO_INJECTED === '1' ? '' : process.env.ANTHROPIC_AUTH_TOKEN);

@@ -16,6 +16,18 @@ const {
 const DEFAULT_POLL_INTERVAL_ACTIVE = 10_000;
 const DEFAULT_POLL_INTERVAL_IDLE = 60_000;
 
+function toInboundStoreMessage(m, channel) {
+  return {
+    id: m.id,
+    type: m.type,
+    payload: m.payload,
+    channel,
+    priority: m.priority || 'normal',
+    refId: m.ref_id,
+    expiresAt: m.expires_at,
+  };
+}
+
 class InboundSync {
   constructor({ store, hubUrl, getHeaders, logger }) {
     this.store = store;
@@ -86,26 +98,33 @@ class InboundSync {
 
       const data = await readHubResponseJson(res);
       const messages = data.messages || [];
+      let stored = 0;
+      let dropped = 0;
 
       if (messages.length > 0) {
-        this.store.writeInboundBatch(
-          messages.map(m => ({
-            id: m.id,
-            type: m.type,
-            payload: m.payload,
-            channel,
-            priority: m.priority || 'normal',
-            refId: m.ref_id,
-            expiresAt: m.expires_at,
-          }))
-        );
+        for (const m of messages) {
+          try {
+            this.store.writeInbound(toInboundStoreMessage(m, channel));
+            stored++;
+          } catch (err) {
+            if (err && err.code === 'MAILBOX_JSONL_LINE_TOO_LARGE') {
+              dropped++;
+              const msgId = m && m.id ? String(m.id) : '(missing id)';
+              this.logger.warn?.(`[inbound] dropped oversized inbound message ${msgId}: ${err.message}`);
+              continue;
+            }
+            throw err;
+          }
+        }
       }
 
       if (data.next_cursor) {
         this.store.setCursor(cursorKey, data.next_cursor);
       }
 
-      return { received: messages.length, cursor: data.next_cursor || cursor };
+      const result = { received: stored, cursor: data.next_cursor || cursor };
+      if (dropped > 0) result.dropped = dropped;
+      return result;
     } catch (err) {
       if (err instanceof AuthError) throw err;
       if (isHubUnreachableError(err)) {
