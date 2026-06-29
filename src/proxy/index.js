@@ -1315,6 +1315,7 @@ class EvoMapProxy {
           stream,
           json: null,
           text: null,
+          traceRequestBody: upstreamBody,
         };
       }
 
@@ -1332,6 +1333,7 @@ class EvoMapProxy {
         stream: null,
         json: () => JSON.parse(text),
         text: () => text,
+        traceRequestBody: upstreamBody,
       };
     } catch (err) {
       clearTimeout(abortTimer);
@@ -1346,6 +1348,7 @@ class EvoMapProxy {
         stream: null,
         json: () => JSON.parse(errBody),
         text: () => errBody,
+        traceRequestBody: upstreamBody,
       };
     }
   }

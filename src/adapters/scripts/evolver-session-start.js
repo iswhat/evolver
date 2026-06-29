@@ -373,6 +373,58 @@ function getNoticeStatePath() {
   return path.join(dir, 'session-start-notice-state.json');
 }
 
+// Resolve the evolver-marked-sessions registry path. This is the v1 "evolver
+// actively marked this session" ledger: only sessions whose session-start hook
+// actually fired (i.e. sessions evolver participated in, after hook install)
+// land here. The trajectory exporter reads it to gate which runtime-session
+// transcripts get collected (strict by default). Lives alongside the proxy
+// trace dir so both collection ledgers share one home. The env override keeps
+// tests hermetic and lets an operator relocate the ledger.
+function getMarkedSessionsPath() {
+  if (process.env.EVOLVER_MARKED_SESSIONS_FILE) return process.env.EVOLVER_MARKED_SESSIONS_FILE;
+  const dir = process.env.EVOLVER_SETTINGS_DIR
+    || process.env.EVOLVER_SESSION_STATE_DIR
+    || path.join(os.homedir(), '.evolver');
+  return path.join(dir, 'marked-sessions.jsonl');
+}
+
+// Pull the tool's session_id out of the hook's stdin payload. Claude Code,
+// Codex, and Cursor all pass `session_id` (Claude Code / Cursor) on the
+// SessionStart stdin JSON; some shapes use `sessionId`. Returns '' when absent
+// so callers can skip the registry write without erroring (Kiro's promptSubmit
+// and hosts that pass no stdin simply don't mark — fail-open by design).
+function _extractHookSessionId(input) {
+  if (!input || typeof input !== 'object') return '';
+  const raw = input.session_id ?? input.sessionId ?? input.sessionID;
+  return typeof raw === 'string' ? raw.trim() : '';
+}
+
+// Append one mark record to the registry. Best-effort and idempotent enough for
+// the exporter's needs: the exporter dedupes into a Set, so a session marked on
+// every prompt (Kiro) just appends duplicate lines that collapse on read. We do
+// NOT read-modify-write to dedupe here — that would race across concurrent
+// sessions; append-only is safe and the file is bounded by session count.
+function recordMarkedSession(sessionId, info = {}) {
+  const sid = String(sessionId || '').trim();
+  if (!sid) return false;
+  const file = getMarkedSessionsPath();
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const record = {
+      session_id: sid,
+      ...(info.cwd ? { cwd: String(info.cwd) } : {}),
+      ...(info.source ? { source: String(info.source) } : {}),
+      marked_at: new Date().toISOString(),
+    };
+    fs.appendFileSync(file, JSON.stringify(record) + '\n', { encoding: 'utf8', mode: 0o600 });
+    return true;
+  } catch (_) {
+    // Never let a registry write failure break session-start: the context
+    // injection (stdout JSON) must always be emitted.
+    return false;
+  }
+}
+
 // TTL throttle keyed by an arbitrary string. Returns true if `key` fired within
 // the last `ttlMs` (caller should suppress); otherwise records "now" for `key`
 // and returns false. Best-effort: a state read/write failure just means no
@@ -415,7 +467,50 @@ function shouldSkipInjection() {
   return throttled(process.cwd(), ttlMs, getDedupStatePath());
 }
 
+// Drain the hook stdin (session context JSON) before running, so we can read the
+// tool's session_id and mark the session in the registry. The host passes the
+// SessionStart payload on stdin; we bound the wait with a short watchdog and
+// fail-open (mark nothing, still emit context) if stdin never closes or isn't a
+// pipe. This mirrors the stdin-draining pattern in evolver-task-recall.js /
+// evolver-session-end.js.
 function main() {
+  let done = false;
+  let buf = '';
+  const finishWithInput = (input) => {
+    if (done) return;
+    done = true;
+    try {
+      const sessionId = _extractHookSessionId(input);
+      if (sessionId) {
+        recordMarkedSession(sessionId, {
+          cwd: resolveProjectDir(),
+          source: String(process.env.EVOLVER_SESSION_SOURCE || (input && input.source) || '').trim() || undefined,
+        });
+      }
+    } catch (_) { /* marking is best-effort; never block injection */ }
+    runInjection();
+  };
+
+  // Watchdog: if stdin never ends (host passed no pipe, or hangs), proceed
+  // without a session_id rather than stalling the agent's session start.
+  const watchdog = setTimeout(() => finishWithInput(null), 1500);
+  try {
+    process.stdin.setEncoding('utf8');
+  } catch (_) { /* some hosts pass no stdin */ }
+  process.stdin.on('data', (c) => { buf += c; });
+  process.stdin.on('error', () => { clearTimeout(watchdog); finishWithInput(null); });
+  process.stdin.on('end', () => {
+    clearTimeout(watchdog);
+    let input = null;
+    try { input = buf.trim() ? JSON.parse(buf) : null; } catch (_) { input = null; }
+    finishWithInput(input);
+  });
+  // Nudge a resume so a paused stdin stream flushes its data/end events; the
+  // watchdog covers the case where neither ever arrives (no pipe attached).
+  try { process.stdin.resume(); } catch (_) { /* ignore */ }
+}
+
+function runInjection() {
   if (shouldSkipInjection()) {
     process.stdout.write(JSON.stringify({}));
     return;
@@ -485,5 +580,8 @@ if (require.main === module) {
     _proxyExpected,
     _proxyReachable,
     _proxyHealthyIfExpected,
+    _extractHookSessionId,
+    getMarkedSessionsPath,
+    recordMarkedSession,
   };
 }

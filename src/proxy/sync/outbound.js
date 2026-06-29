@@ -74,6 +74,12 @@ function serializeOutboundBody(senderId, messages) {
   });
 }
 
+function outboundEndpoint(hubUrl, senderId) {
+  const endpoint = new URL(`${String(hubUrl || '').replace(/\/+$/, '')}/a2a/mailbox/outbound`);
+  if (senderId) endpoint.searchParams.set('sender_id', senderId);
+  return endpoint.toString();
+}
+
 function outboundBodyBytes(senderId, messages) {
   return Buffer.byteLength(serializeOutboundBody(senderId, messages), 'utf8');
 }
@@ -181,10 +187,9 @@ class OutboundSync {
     }
     let dropped = rejectedTraceUploads.length;
 
-    const endpoint = `${this.hubUrl}/a2a/mailbox/outbound`;
-
     try {
       const senderId = this.store.getState('node_id');
+      const endpoint = outboundEndpoint(this.hubUrl, senderId);
       const prepared = buildSizedOutboundBatch(
         senderId,
         pending,

@@ -25,8 +25,11 @@ function cleanup(dir) {
   try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
 }
 
+// Run `fn` with a controlled set of host-detection env vars. All known signal
+// vars are cleared first (so directory-based detection is exercised even when
+// the suite runs from inside a Claude Code / Cursor session, #590), then the
+// `patch` values are applied; everything is restored afterwards.
 function withEnv(patch, fn) {
-  const oldEnv = {};
   const keys = [
     'CLAUDECODE',
     'CLAUDE_CODE_ENTRYPOINT',
@@ -34,9 +37,15 @@ function withEnv(patch, fn) {
     'CURSOR_TRACE_ID',
     'CURSOR_SESSION_ID',
     'CURSOR_PROJECT_DIR',
+    'CURSOR_AGENT',
+    'CODEX_THREAD_ID',
+    'CODEX_SHELL',
+    'CODEX_CI',
+    'CODEX_INTERNAL_ORIGINATOR_OVERRIDE',
     'TERM_PROGRAM',
     ...Object.keys(patch),
   ];
+  const oldEnv = {};
   for (const key of keys) {
     oldEnv[key] = process.env[key];
     delete process.env[key];
@@ -159,6 +168,49 @@ describe('hookAdapter', () => {
       }, () => {
         assert.equal(hookAdapter.detectPlatformFromEnv(), 'cursor');
       });
+    });
+
+    it('detects CURSOR_AGENT as a cursor strong signal before CLAUDE_PROJECT_DIR', () => {
+      withEnv({
+        CURSOR_AGENT: '1',
+        CLAUDE_PROJECT_DIR: '/tmp/cursor-compat-alias',
+      }, () => {
+        assert.equal(hookAdapter.detectPlatformFromEnv(), 'cursor');
+      });
+    });
+
+    it('prefers explicit cursor runtime signals over codex environment signals', () => {
+      withEnv({
+        CURSOR_AGENT: '1',
+        CODEX_THREAD_ID: 'codex-thread-1',
+      }, () => {
+        assert.equal(hookAdapter.detectPlatformFromEnv(), 'cursor');
+      });
+    });
+
+    it('prefers explicit claude-code runtime signals over codex environment signals', () => {
+      withEnv({
+        CLAUDE_CODE_ENTRYPOINT: 'cli',
+        CODEX_THREAD_ID: 'codex-thread-1',
+      }, () => {
+        assert.equal(hookAdapter.detectPlatformFromEnv(), 'claude-code');
+      });
+    });
+
+    it('prefers codex environment signals over directory fallback', () => {
+      const tmp = makeTmpDir();
+      try {
+        const cwd = path.join(tmp, 'project');
+        fs.mkdirSync(path.join(cwd, '.cursor'), { recursive: true });
+        withEnv({
+          CODEX_THREAD_ID: 'codex-thread-1',
+          CODEX_SHELL: 'zsh',
+          CODEX_CI: '1',
+          CODEX_INTERNAL_ORIGINATOR_OVERRIDE: 'codex',
+        }, () => {
+          assert.equal(hookAdapter.detectPlatform(cwd), 'codex');
+        });
+      } finally { cleanup(tmp); }
     });
 
     it('keeps fallback directory detection when no host environment is present (#590)', () => {
@@ -416,6 +468,35 @@ describe('hookAdapter', () => {
       const sessionCmds = merged.hooks.SessionStart.flatMap(m => (m.hooks || []).map(h => h.command));
       assert.ok(sessionCmds[0].includes('evolver-session-start'));
       assert.ok(!sessionCmds.some(c => c.includes('evolver-daemon-start')));
+    });
+
+    it('preserves user hooks sharing a matcher with refreshed evolver hooks', () => {
+      const previousInstall = {
+        hooks: {
+          Stop: [
+            {
+              hooks: [
+                { type: 'command', command: 'node OLD/evolver-session-end.js' },
+                { type: 'command', command: 'node user-cleanup.js' },
+              ],
+            },
+          ],
+        },
+      };
+      const newPatch = {
+        hooks: {
+          Stop: [
+            {
+              hooks: [{ type: 'command', command: 'node NEW/evolver-session-end.js' }],
+            },
+          ],
+        },
+      };
+      const merged = hookAdapter.mergeWithHooksUnion(previousInstall, newPatch);
+      const cmds = merged.hooks.Stop.flatMap(m => (m.hooks || []).map(h => h.command));
+      assert.ok(cmds.includes('node user-cleanup.js'));
+      assert.ok(cmds.includes('node NEW/evolver-session-end.js'));
+      assert.ok(!cmds.some(c => c.includes('OLD/evolver-session-end')));
     });
 
     it('handles flat (Codex) command shape', () => {
@@ -851,6 +932,46 @@ describe('claudeCode adapter', () => {
     } finally { cleanup(tmp); }
   });
 
+  it('install refreshes managed legacy evolver hooks without force', () => {
+    const tmp = makeTmpDir();
+    try {
+      const claudeDir = path.join(tmp, '.claude');
+      fs.mkdirSync(claudeDir, { recursive: true });
+      const settingsPath = path.join(claudeDir, 'settings.json');
+      fs.writeFileSync(settingsPath, JSON.stringify({
+        _evolver_managed: true,
+        hooks: {
+          SessionStart: [
+            { hooks: [{ type: 'command', command: 'node .claude/hooks/evolver-session-start.js' }] },
+          ],
+          Stop: [
+            { hooks: [
+              { type: 'command', command: 'node user-cleanup.js' },
+              { type: 'command', command: 'node .claude/hooks/evolver-session-end.js' },
+            ] },
+          ],
+        },
+      }));
+
+      const evolverRoot = path.resolve(__dirname, '..');
+      const result = claudeAdapter.install({ configRoot: tmp, evolverRoot, force: false });
+      assert.equal(result.ok, true);
+      assert.notEqual(result.skipped, true);
+
+      const merged = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+      const commands = collectCommands(merged);
+      assert.ok(commands.includes('node user-cleanup.js'), 'user Stop hook must be preserved');
+      assert.ok(!commands.some(c => c.includes('node .claude/hooks/')),
+        'legacy relative evolver hook commands must be replaced');
+      assert.equal(commands.filter(c => c.includes('evolver-session-start')).length, 1);
+      assert.equal(commands.filter(c => c.includes('evolver-session-end')).length, 1);
+      assert.ok(commands.every(c => {
+        if (!hookAdapter.isEvolverHookCommand(c)) return true;
+        return c.startsWith('node -e ');
+      }), 'all evolver hook commands must use the safe node -e wrapper');
+    } finally { cleanup(tmp); }
+  });
+
   it('uninstall strips evolver hooks even without _evolver_managed marker (#538)', () => {
     const tmp = makeTmpDir();
     try {
@@ -929,7 +1050,17 @@ describe('claudeCode adapter', () => {
     assert.equal(hooks.hooks.PostToolUse[0].matcher, 'Write');
   });
 
-  it('writes safe absolute hook wrappers for Claude Code config paths with spaces (#590)', () => {
+  function collectCommands(hooks) {
+    const commands = [];
+    for (const matchers of Object.values(hooks.hooks)) {
+      for (const matcher of matchers) {
+        for (const hook of matcher.hooks || []) commands.push(hook.command);
+      }
+    }
+    return commands;
+  }
+
+  it('builds absolute, encoded hook commands rooted at configRoot with spaces (#590)', () => {
     const tmp = makeTmpDir();
     try {
       const configRoot = path.join(tmp, 'Claude Project With Spaces');
@@ -938,15 +1069,7 @@ describe('claudeCode adapter', () => {
       assert.equal(result.ok, true);
 
       const settings = JSON.parse(fs.readFileSync(path.join(configRoot, '.claude', 'settings.json'), 'utf8'));
-      const commands = [];
-      for (const matchers of Object.values(settings.hooks)) {
-        for (const matcher of matchers) {
-          for (const hook of matcher.hooks || []) {
-            commands.push(hook.command);
-          }
-        }
-      }
-
+      const commands = collectCommands(settings);
       const scripts = [
         'evolver-session-start.js',
         'evolver-task-recall.js',
@@ -960,31 +1083,36 @@ describe('claudeCode adapter', () => {
         assert.ok(command, `${scriptName} hook command must be present`);
         assert.ok(!command.includes('node .claude/hooks/'), 'hook command must not use a relative script path');
         assert.ok(!command.includes(scriptPath), `hook command must not expose raw script path ${scriptPath}`);
+        assert.ok(!command.includes(configRoot), 'hook command must not expose raw config root');
         assert.match(command, /^node -e (["']).+\1 \S+\.js$/);
+        // The plaintext basename keeps uninstall/reinstall matching working.
+        assert.ok(hookAdapter.isEvolverHookCommand(command), 'must stay matchable as evolver-owned');
       }
     } finally { cleanup(tmp); }
   });
 
-  it('does not expose shell-expanded path fragments in generated hook commands', () => {
-    const configRoot = path.join(
-      os.tmpdir(),
-      'Claude $(touch should-not-run) %TEMP% `touch should-not-run`'
-    );
-    const hooks = claudeAdapter.buildClaudeHooks('/evolver', configRoot);
-    const commands = Object.values(hooks.hooks)
-      .flatMap(matchers => matchers.flatMap(matcher => matcher.hooks || []))
-      .map(hook => hook.command);
-
+  it('keeps shell-expansion bytes out of generated hook commands', () => {
+    const configRoot = path.join(os.tmpdir(), 'Claude $(touch pwned) %TEMP% `id`');
+    const commands = collectCommands(claudeAdapter.buildClaudeHooks('/evolver', configRoot));
     assert.ok(commands.length > 0);
     for (const command of commands) {
-      assert.ok(!command.includes('$('), 'command must not contain command-substitution syntax');
-      assert.ok(!command.includes('%TEMP%'), 'command must not contain Windows environment expansion syntax');
-      assert.ok(!command.includes('`'), 'command must not contain backtick command-substitution syntax');
-      assert.ok(!command.includes(configRoot), 'command must not expose the raw config root');
+      assert.ok(!command.includes('$('), 'no command-substitution bytes');
+      assert.ok(!command.includes('`'), 'no backtick bytes');
+      assert.ok(!command.includes('%TEMP%'), 'no Windows env-expansion bytes');
+      assert.ok(!command.includes(configRoot), 'no raw config path');
     }
   });
 
-  it('runs POSIX hook paths containing $() without shell expansion', { skip: process.platform === 'win32' }, () => {
+  it('claudeCode reuses the shared hookAdapter.buildSafeNodeHookCommand', () => {
+    const configRoot = path.join(os.tmpdir(), 'shared-impl-check');
+    const command = claudeAdapter.buildClaudeHooks('/evolver', configRoot).hooks.SessionStart[0].hooks[0].command;
+    const expected = hookAdapter.buildSafeNodeHookCommand(
+      path.resolve(configRoot, '.claude', 'hooks', 'evolver-session-start.js')
+    );
+    assert.equal(command, expected);
+  });
+
+  it('runs a hook path containing $() through POSIX sh without expansion (#590)', { skip: process.platform === 'win32' }, () => {
     const tmp = makeTmpDir();
     try {
       const proofPath = path.join(tmp, 'proof');
@@ -1006,8 +1134,8 @@ describe('claudeCode adapter', () => {
         timeout: 15000,
       });
       assert.equal(result.status, 0, `hook command should succeed. stderr=${result.stderr}`);
-      assert.ok(fs.existsSync(ranPath), 'hook script should execute via decoded path');
-      assert.ok(!fs.existsSync(proofPath), 'shell command substitution in the path must not execute');
+      assert.ok(fs.existsSync(ranPath), 'hook script should execute via the decoded path');
+      assert.ok(!fs.existsSync(proofPath), 'command substitution in the path must not execute');
     } finally { cleanup(tmp); }
   });
 });

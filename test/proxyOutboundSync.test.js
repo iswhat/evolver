@@ -92,7 +92,9 @@ describe('proxy trace outbound sync', () => {
       assert.equal(result.sent, 1);
       assert.equal(result.synced, 1);
       assert.equal(requests.length, 1);
-      assert.equal(requests[0].url, 'https://hub.example.test/a2a/mailbox/outbound');
+      const outboundUrl = new URL(requests[0].url);
+      assert.equal(outboundUrl.origin + outboundUrl.pathname, 'https://hub.example.test/a2a/mailbox/outbound');
+      assert.equal(outboundUrl.searchParams.get('sender_id'), 'node_test_trace_upload');
       assert.equal(requests[0].method, 'POST');
       assert.equal(requests[0].body.sender_id, 'node_test_trace_upload');
       assert.equal(requests[0].body.messages.length, 1);

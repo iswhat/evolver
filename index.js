@@ -2817,6 +2817,165 @@ async function main() {
       console.log('');
     }
 
+  } else if (command === 'trajectory-export') {
+    const allowPartial = args.includes('--allow-partial');
+    const runtimeSessions = args.includes('--runtime-sessions');
+    // Strict-by-default marking gate (v1): runtime-session discovery only
+    // collects sessions evolver actively marked (session-start hook), minus
+    // those the gateway already captured. These flags open each gate back up.
+    const includeUnmarked = args.includes('--include-unmarked');
+    const includeGatewayCaptured = args.includes('--include-gateway-captured');
+    try {
+      const optionValue = (name) => {
+        let value;
+        for (let i = 0; i < args.length; i += 1) {
+          const arg = args[i];
+          if (arg === name) {
+            if (i + 1 >= args.length || String(args[i + 1]).startsWith('--')) {
+              throw new Error('missing value for ' + name);
+            }
+            value = String(args[i + 1]);
+          } else if (typeof arg === 'string' && arg.startsWith(name + '=')) {
+            value = arg.slice(name.length + 1);
+          }
+        }
+        return value;
+      };
+      const optionValues = (name) => {
+        const values = [];
+        for (let i = 0; i < args.length; i += 1) {
+          const arg = args[i];
+          if (arg === name) {
+            if (i + 1 >= args.length || String(args[i + 1]).startsWith('--')) {
+              throw new Error('missing value for ' + name);
+            }
+            values.push(String(args[i + 1]));
+          } else if (typeof arg === 'string' && arg.startsWith(name + '=')) {
+            values.push(arg.slice(name.length + 1));
+          }
+        }
+        return values;
+      };
+      const input = optionValue('--input');
+      const output = optionValue('--output');
+      const runtimeSessionDirs = optionValues('--runtime-session-dir');
+      const nodeSecretInline = optionValue('--node-secret');
+      const nodeSecretFile = optionValue('--node-secret-file');
+      const nodeSecretEnv = optionValue('--node-secret-env');
+      const hubPrivateKeyFile = optionValue('--hub-private-key');
+      const nodeSecretKeyringFile = optionValue('--node-secret-keyring');
+      const markedSessionsFile = optionValue('--marked-sessions-file');
+      let nodeSecret;
+      let hubPrivateKey;
+      let nodeSecretKeyring;
+      const nodeSecretSourceCount = [nodeSecretInline, nodeSecretFile, nodeSecretEnv]
+        .filter((value) => value !== undefined).length;
+      if (nodeSecretSourceCount > 1) {
+        throw new Error('use only one node secret source');
+      }
+      if (nodeSecretInline !== undefined) {
+        if (!nodeSecretInline) throw new Error('missing value for --node-secret');
+        if (fs.existsSync(nodeSecretInline)) {
+          try {
+            nodeSecret = fs.readFileSync(nodeSecretInline, 'utf8').trim();
+          } catch (readErr) {
+            const err = new Error('node secret file is not readable: ' + nodeSecretInline);
+            err.cause = readErr;
+            throw err;
+          }
+          if (!nodeSecret) throw new Error('node secret file is empty');
+        } else {
+          nodeSecret = String(nodeSecretInline).trim();
+          if (!nodeSecret) throw new Error('node secret is empty');
+        }
+      }
+      if (nodeSecretFile !== undefined) {
+        if (!nodeSecretFile) throw new Error('missing path for --node-secret-file');
+        try {
+          nodeSecret = fs.readFileSync(nodeSecretFile, 'utf8').trim();
+        } catch (readErr) {
+          const err = new Error('node secret file is not readable: ' + nodeSecretFile);
+          err.cause = readErr;
+          throw err;
+        }
+        if (!nodeSecret) throw new Error('node secret file is empty');
+      }
+      if (nodeSecretEnv !== undefined) {
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(nodeSecretEnv)) {
+          throw new Error('invalid environment variable name for --node-secret-env');
+        }
+        nodeSecret = String(process.env[nodeSecretEnv] || '').trim();
+        if (!nodeSecret) throw new Error('node secret environment variable is empty or unset');
+      }
+      if (hubPrivateKeyFile !== undefined) {
+        if (!hubPrivateKeyFile) throw new Error('missing path for --hub-private-key');
+        try {
+          hubPrivateKey = fs.readFileSync(hubPrivateKeyFile, 'utf8');
+        } catch (readErr) {
+          const err = new Error('hub private key file is not readable: ' + hubPrivateKeyFile);
+          err.cause = readErr;
+          throw err;
+        }
+        if (!String(hubPrivateKey || '').trim()) throw new Error('hub private key file is empty');
+      }
+      if (nodeSecretKeyringFile !== undefined) {
+        if (!nodeSecretKeyringFile) throw new Error('missing path for --node-secret-keyring');
+        try {
+          nodeSecretKeyring = JSON.parse(fs.readFileSync(nodeSecretKeyringFile, 'utf8'));
+        } catch (readErr) {
+          const err = new Error('node secret keyring file is not readable or invalid JSON: ' + nodeSecretKeyringFile);
+          err.cause = readErr;
+          throw err;
+        }
+      }
+      const { writeTrajectories } = require('./src/gep/trajectoryExport');
+      const result = writeTrajectories({
+        input,
+        output,
+        nodeSecret,
+        nodeSecretKeyring,
+        hubPrivateKey,
+        allowPartial,
+        runtimeSessions: runtimeSessions ? true : undefined,
+        runtimeSessionDirs,
+        markedSessionsFile,
+        includeUnmarked: includeUnmarked ? true : undefined,
+        includeGatewayCaptured: includeGatewayCaptured ? true : undefined,
+      });
+      console.log('[trajectory-export] Wrote ' + result.trajectories.length + ' trajector' + (result.trajectories.length === 1 ? 'y' : 'ies') + ' to ' + result.outputPath);
+      console.log('[trajectory-export] Read ' + result.rowsRead + ' trace row(s) and ' + (result.sessionTurnsRead || 0) + ' session turn(s) from ' + (result.filesRead || 0) + ' file(s).');
+      if (result.sessionFilesRead > 0) {
+        console.log('[trajectory-export] Converted ' + result.sessionFilesRead + ' runtime session file(s).');
+      }
+      if (result.runtimeSessionDiscovery && result.runtimeSessionDiscovery.enabled) {
+        console.log('[trajectory-export] Runtime session discovery is local-only; no Hub upload is performed.');
+        console.log('[trajectory-export] Runtime discovery scanned '
+          + result.runtimeSessionDiscovery.dirsScanned + ' Codex/Claude dir(s), matched '
+          + result.runtimeSessionDiscovery.filesMatched + ' workspace session file(s).');
+        const mg = result.runtimeSessionDiscovery.markGate;
+        if (mg) {
+          console.log('[trajectory-export] Marking gate: enforce_marked=' + mg.enforceMarked
+            + ', exclude_gateway_captured=' + mg.excludeGatewayCaptured
+            + '; marked_registry=' + mg.markedSessionCount
+            + ', gateway_captured=' + mg.gatewayCapturedCount
+            + ', excluded_unmarked=' + mg.excludedByMark
+            + ', excluded_gateway=' + mg.excludedByGateway + '.');
+        }
+      }
+      if (result.stats) {
+        console.log('[trajectory-export] Scanned ' + result.stats.rowsScanned
+          + ' row(s); encrypted=' + result.stats.encryptedRows
+          + ', skipped_missing_secret=' + result.stats.skippedMissingSecret
+          + ', decrypt_failures=' + result.stats.decryptFailures
+          + ', invalid_json=' + result.stats.invalidJson
+          + ', session_invalid_json=' + (result.stats.sessionInvalidJson || 0)
+          + ', non_prism=' + result.stats.nonPrismSkipped + '.');
+      }
+    } catch (error) {
+      console.error('[trajectory-export] Failed: ' + (error && error.message || error));
+      process.exit(1);
+    }
+
   } else if (command === 'webui') {
     const portFlag = args.find(a => typeof a === 'string' && a.startsWith('--port='));
     const port = portFlag ? Number(portFlag.slice('--port='.length)) : undefined;
@@ -3296,7 +3455,7 @@ async function main() {
     }
 
   } else {
-    console.log(`Usage: node index.js [run|/evolve|login|logout|proxy-token|solidify|review|distill|fetch|sync|asset-log|webui|setup-hooks|reuse|publish|recipe|buy|orders|verify|atp|atp-complete|experiment] [--loop]
+    console.log(`Usage: node index.js [run|/evolve|login|logout|proxy-token|solidify|review|distill|fetch|sync|asset-log|trajectory-export|webui|setup-hooks|reuse|publish|recipe|buy|orders|verify|atp|atp-complete|experiment] [--loop]
   - login                      (authorize this device via the hub, gh-auth-login style; stores an OAuth token used instead of node_secret)
   - logout                     (remove the stored OAuth token)
   - proxy-token                (print the local proxy bearer token for command-backed client auth)
@@ -3345,6 +3504,29 @@ async function main() {
     - --last=<N>               (show last N entries)
     - --since=<ISO_date>       (entries after date)
     - --json                   (raw JSON output)
+  - trajectory-export flags:
+    - --input=<path>|--input <path>
+                                (proxy trace JSONL, Claude/Codex/Cursor session JSONL, or directory; default: platform trace file)
+    - --output=<path>|--output <path>
+                                (output JSONL; default: ./coding-trajectories.jsonl)
+    - --runtime-sessions        (local-only: also scan current-workspace Codex/Claude JSONL from ~/.codex/sessions and ~/.claude/projects; env: EVOLVER_TRAJECTORY_RUNTIME_SESSIONS=1)
+    - --runtime-session-dir=<path>|--runtime-session-dir <path>
+                                (local-only: extra Codex/Claude runtime session directory; may be repeated)
+    - --include-unmarked        (collect runtime sessions even if evolver did not actively mark them; default: strict — only marked sessions are collected; env: EVOLVER_TRAJECTORY_INCLUDE_UNMARKED=1)
+    - --include-gateway-captured (collect runtime sessions even if the proxy gateway already captured them; default: strict — gateway-captured sessions are skipped; env: EVOLVER_TRAJECTORY_INCLUDE_GATEWAY_CAPTURED=1)
+    - --marked-sessions-file=<path>|--marked-sessions-file <path>
+                                (override the evolver-marked-sessions registry path; default: <trace-dir>/marked-sessions.jsonl; env: EVOLVER_MARKED_SESSIONS_FILE)
+    - --allow-partial           (skip unreadable encrypted rows instead of failing the whole export)
+    - --node-secret=<hex|path>|--node-secret <hex|path>
+                                (read node secret from an existing local file, otherwise use the literal value)
+    - --node-secret-file=<path>|--node-secret-file <path>
+                                (read node secret from a local file)
+    - --node-secret-env=<name>|--node-secret-env <name>
+                                (read node secret from an environment variable)
+    - --node-secret-keyring=<path>|--node-secret-keyring <path>
+                                (read versioned node secrets from a JSON file)
+    - --hub-private-key=<path>|--hub-private-key <path>
+                                (decrypt hub_key_envelope trace rows with a local private key)
   - webui flags:
     - --port=<N>               (local Web UI port, default 19821)
 

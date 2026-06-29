@@ -1,41 +1,20 @@
 const fs = require('fs');
 const path = require('path');
-const { mergeJsonFile, copyHookScripts, appendSectionToFile, removeHookScripts, removeMarkedSection, assertSafeConfigDir, isEvolverHookCommand } = require('./hookAdapter');
+const { mergeJsonFile, copyHookScripts, appendSectionToFile, removeHookScripts, removeMarkedSection, assertSafeConfigDir, isEvolverHookCommand, buildSafeNodeHookCommand } = require('./hookAdapter');
 
 const HOOK_SCRIPTS_DIR_NAME = 'hooks';
 const EVOLVER_MARKER = '<!-- evolver-evolution-memory -->';
 
-function shellSingleQuote(value) {
-  return `'${String(value).replace(/'/g, "'\\''")}'`;
-}
-
-function quoteEvalScript(script) {
-  if (process.platform === 'win32') {
-    if (script.includes('"')) {
-      throw new Error('unexpected double quote in generated hook wrapper');
-    }
-    return `"${script}"`;
-  }
-  return shellSingleQuote(script);
-}
-
-function buildSafeNodeHookCommand(scriptPath) {
-  const encodedPath = Buffer.from(String(scriptPath), 'utf8').toString('base64');
-  const js = [
-    "const {spawnSync}=require('child_process')",
-    `const p=Buffer.from('${encodedPath}','base64').toString('utf8')`,
-    "const r=spawnSync(process.execPath,[p],{stdio:'inherit',shell:false})",
-    "if(r.error){throw r.error}",
-    'process.exit(r.status == null ? 1 : r.status)',
-  ].join(';');
-  return `node -e ${quoteEvalScript(js)} ${path.basename(scriptPath)}`;
-}
-
 function buildClaudeHooks(evolverRoot, configRoot) {
+  // Resolve hook scripts to an absolute path rooted at the real config dir so
+  // the command works regardless of the cwd Claude Code is launched from
+  // (#590). Falls back to the legacy relative base only when configRoot is
+  // absent (callers should always pass it).
   const scriptsBase = configRoot
-    ? path.join(configRoot, '.claude', 'hooks')
+    ? path.resolve(configRoot, '.claude', 'hooks')
     : path.join('.claude', 'hooks');
-  const hookCommand = (scriptName) => buildSafeNodeHookCommand(path.join(scriptsBase, scriptName));
+  const hookCommand = (scriptName) =>
+    buildSafeNodeHookCommand(path.join(scriptsBase, scriptName));
   return {
     hooks: {
       SessionStart: [
@@ -115,16 +94,6 @@ function install({ configRoot, evolverRoot, force }) {
   const hooksDir = path.join(claudeDir, HOOK_SCRIPTS_DIR_NAME);
   const claudeMdPath = path.join(configRoot, 'CLAUDE.md');
   assertSafeConfigDir(claudeDir, '.claude', { subdirs: [HOOK_SCRIPTS_DIR_NAME] });
-
-  if (!force && fs.existsSync(settingsPath)) {
-    try {
-      const existing = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-      if (existing._evolver_managed) {
-        console.log('[claude-code] Evolver hooks already installed. Use --force to overwrite.');
-        return { ok: true, skipped: true };
-      }
-    } catch { /* proceed */ }
-  }
 
   fs.mkdirSync(claudeDir, { recursive: true });
 
