@@ -347,6 +347,127 @@ describe('round-3: SSE reconnect backoff resets on long-sleep wake', () => {
   });
 });
 
+describe('issue 594: short-lived SSE streams do not reset reconnect backoff', () => {
+  beforeEach(() => {
+    _resetHeartbeatStateForTesting();
+    _resetSseReconnectBackoffForTesting();
+  });
+  afterEach(() => {
+    _resetHeartbeatStateForTesting();
+    _resetSseReconnectBackoffForTesting();
+    try { a2a.stopEventStream(); } catch (_) {}
+  });
+
+  it('keeps exponential backoff when EventSource opens and immediately errors', () => {
+    const savedHubUrl = process.env.A2A_HUB_URL;
+    const savedNodeId = process.env.A2A_NODE_ID;
+    const savedEventSource = globalThis.EventSource;
+    const savedSetTimeout = global.setTimeout;
+    const savedClearTimeout = global.clearTimeout;
+    const savedLog = console.log;
+    const savedWarn = console.warn;
+    const instances = [];
+    const reconnectDelays = [];
+
+    process.env.A2A_HUB_URL = 'http://localhost:19999';
+    process.env.A2A_NODE_ID = 'node_issue594';
+    globalThis.EventSource = function () {
+      instances.push(this);
+      this.close = function () {};
+    };
+    global.setTimeout = function (_fn, ms) {
+      reconnectDelays.push(ms);
+      return { unref: function () {} };
+    };
+    global.clearTimeout = function () {};
+    console.log = function () {};
+    console.warn = function () {};
+
+    try {
+      a2a.startEventStream();
+      assert.equal(_getHeartbeatInternalsForTesting().sseReconnectMs, 5000);
+      instances[0].onerror();
+      assert.deepEqual(reconnectDelays, [5000]);
+      assert.equal(_getHeartbeatInternalsForTesting().sseReconnectMs, 10000);
+
+      a2a.startEventStream();
+      assert.equal(_getHeartbeatInternalsForTesting().sseReconnectMs, 10000,
+        'a short-lived successful open must not snap backoff to 5000ms');
+      instances[1].onerror();
+      assert.deepEqual(reconnectDelays, [5000, 10000]);
+      assert.equal(_getHeartbeatInternalsForTesting().sseReconnectMs, 20000);
+    } finally {
+      try { a2a.stopEventStream(); } catch (_) {}
+      if (savedHubUrl === undefined) delete process.env.A2A_HUB_URL;
+      else process.env.A2A_HUB_URL = savedHubUrl;
+      if (savedNodeId === undefined) delete process.env.A2A_NODE_ID;
+      else process.env.A2A_NODE_ID = savedNodeId;
+      if (savedEventSource === undefined) delete globalThis.EventSource;
+      else globalThis.EventSource = savedEventSource;
+      global.setTimeout = savedSetTimeout;
+      global.clearTimeout = savedClearTimeout;
+      console.log = savedLog;
+      console.warn = savedWarn;
+    }
+  });
+
+  it('resets reconnect backoff after a stable stream errors', () => {
+    const savedHubUrl = process.env.A2A_HUB_URL;
+    const savedNodeId = process.env.A2A_NODE_ID;
+    const savedEventSource = globalThis.EventSource;
+    const savedSetTimeout = global.setTimeout;
+    const savedClearTimeout = global.clearTimeout;
+    const savedLog = console.log;
+    const savedWarn = console.warn;
+    const savedNow = Date.now;
+    const instances = [];
+    const reconnectDelays = [];
+    let now = 1000;
+
+    process.env.A2A_HUB_URL = 'http://localhost:19999';
+    process.env.A2A_NODE_ID = 'node_issue594';
+    Date.now = function () { return now; };
+    globalThis.EventSource = function () {
+      instances.push(this);
+      this.close = function () {};
+    };
+    global.setTimeout = function (_fn, ms) {
+      reconnectDelays.push(ms);
+      return { unref: function () {} };
+    };
+    global.clearTimeout = function () {};
+    console.log = function () {};
+    console.warn = function () {};
+
+    try {
+      a2a.startEventStream();
+      instances[0].onerror();
+      assert.deepEqual(reconnectDelays, [5000]);
+      assert.equal(_getHeartbeatInternalsForTesting().sseReconnectMs, 10000);
+
+      a2a.startEventStream();
+      now += 30001;
+      instances[1].onerror();
+      assert.deepEqual(reconnectDelays, [5000, 5000],
+        'a stream that survives the stable window should schedule the base reconnect delay');
+      assert.equal(_getHeartbeatInternalsForTesting().sseReconnectMs, 10000);
+    } finally {
+      try { a2a.stopEventStream(); } catch (_) {}
+      Date.now = savedNow;
+      if (savedHubUrl === undefined) delete process.env.A2A_HUB_URL;
+      else process.env.A2A_HUB_URL = savedHubUrl;
+      if (savedNodeId === undefined) delete process.env.A2A_NODE_ID;
+      else process.env.A2A_NODE_ID = savedNodeId;
+      if (savedEventSource === undefined) delete globalThis.EventSource;
+      else globalThis.EventSource = savedEventSource;
+      global.setTimeout = savedSetTimeout;
+      global.clearTimeout = savedClearTimeout;
+      console.log = savedLog;
+      console.warn = savedWarn;
+    }
+  });
+});
+
 describe('round-3: hubFetch.drainPool() is callable and does not throw', () => {
   it('exports drainPool', () => {
     const hf = require('../src/gep/hubFetch');

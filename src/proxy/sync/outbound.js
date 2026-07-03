@@ -120,6 +120,30 @@ function buildSizedOutboundBatch(senderId, messages, maxBodyBytes, hardMaxBodyBy
   return { selected, rejected, body, bodyBytes, maxBodyBytes };
 }
 
+function numberField(row, keys) {
+  for (const key of keys) {
+    if (!row || row[key] === undefined || row[key] === null || row[key] === '') continue;
+    const n = Number(row[key]);
+    if (Number.isFinite(n)) return n;
+  }
+  return null;
+}
+
+function resultRetryAfterMs(row) {
+  const ms = numberField(row, ['retryAfterMs', 'retry_after_ms']);
+  if (ms !== null) return Math.max(1_000, ms);
+  const seconds = numberField(row, ['retryAfter', 'retry_after']);
+  return seconds !== null ? Math.max(1_000, seconds * 1000) : null;
+}
+
+function resultIsRetryable(row) {
+  return row && (row.retryable === true || row.retryable === 'true' || row.terminal === false || row.terminal === 'false');
+}
+
+function resultIsTerminal(row) {
+  return row && (row.terminal === true || row.terminal === 'true');
+}
+
 class OutboundSync {
   constructor({ store, hubUrl, getHeaders, logger }) {
     this.store = store;
@@ -261,17 +285,33 @@ class OutboundSync {
 
       const updates = [];
       const inboundMessages = [];
+      let deferred = 0;
 
       for (const r of results) {
         if (r.status === 'accepted' || r.status === 'ok') {
           updates.push({ id: r.id, status: 'synced' });
         } else if (r.status === 'failed' || r.status === 'rejected') {
           const msg = pending.find(m => m.id === r.id);
-          const error = sanitizeHubErrorMessage(r.error || 'rejected by hub');
-          if (msg && msg.retry_count < MAX_RETRIES) {
+          const error = sanitizeHubErrorMessage(r.error || r.reason || 'rejected by hub');
+          const retryAfterMs = resultRetryAfterMs(r);
+          // A `terminal: true` hint from the Hub means "final, do not retry"
+          // and must win even when the same result also carries retryAfterMs
+          // or retryable (a contradictory but possible payload). Guard the
+          // defer branch with !resultIsTerminal so a terminal message is
+          // finalized as failed instead of being parked for retry and resent.
+          if (msg && !resultIsTerminal(r) && (retryAfterMs !== null || resultIsRetryable(r))) {
+            this.store.deferRetry(r.id, error, retryAfterMs || 60_000);
+            deferred++;
+          } else if (msg && !resultIsTerminal(r) && msg.retry_count < MAX_RETRIES) {
             this.store.incrementRetry(r.id, error);
           } else {
-            updates.push({ id: r.id, status: 'failed', error: sanitizeHubErrorMessage(r.error || 'max retries') });
+            // Reuse the already-sanitized `error` (r.error / r.reason, else
+            // 'rejected by hub'). Only label 'max retries' for the genuine
+            // retry-exhaustion path (non-terminal, no explicit Hub error) so a
+            // terminal rejection without an error/reason is not mislabeled as
+            // retry exhaustion (Bugbot PR #301 Low).
+            const exhausted = !resultIsTerminal(r) && !(r.error || r.reason);
+            updates.push({ id: r.id, status: 'failed', error: exhausted ? sanitizeHubErrorMessage('max retries') : error });
           }
         }
 
@@ -290,6 +330,7 @@ class OutboundSync {
 
       this.store.setState('last_sync_at', new Date().toISOString());
       const result = { sent: pending.length, synced: updates.length, responses: inboundMessages.length };
+      if (deferred > 0) result.deferred = deferred;
       if (dropped > 0) result.dropped = dropped;
       return result;
     } catch (err) {

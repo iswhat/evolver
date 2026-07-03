@@ -153,6 +153,10 @@ describe('opencode adapter: install', () => {
       const agentsMd = fs.readFileSync(path.join(tmp, 'AGENTS.md'), 'utf8');
       assert.ok(agentsMd.includes('Evolution Memory'));
       assert.ok(agentsMd.includes('evolver-evolution-memory'));
+      assert.ok(agentsMd.includes('Do not narrate routine Evolver checks'));
+      assert.ok(!agentsMd.includes('For substantive tasks'));
+      assert.ok(!agentsMd.includes('gep_recall'));
+      assert.ok(!agentsMd.includes('gep_record_outcome'));
     } finally { cleanup(tmp); }
   });
 

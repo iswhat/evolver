@@ -47,6 +47,7 @@ function inboundRow({ id, type, text, now }) {
     synced_at: null,
     expires_at: null,
     retry_count: 0,
+    next_retry_at: null,
     error: null,
   };
 }

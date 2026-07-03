@@ -482,6 +482,207 @@ describe('proxy trace outbound sync', () => {
     }
   });
 
+  it('defers retryable per-message Hub failures without burning retry count', async () => {
+    const dataDir = tmpDataDir();
+    const store = new MailboxStore(dataDir);
+    const requests = [];
+    store.setState('node_id', 'node_test_retryable_result');
+    const created = store.send({
+      type: 'proxy_trace',
+      priority: 'low',
+      payload: {
+        schema: 'prism_trace_row.v1',
+        encrypted: true,
+        trace: encryptedTrace('cmV0cnlhYmxl'),
+      },
+    });
+
+    hubFetchMod._setFetchImplForTest(async (url, opts) => {
+      requests.push({ url, body: JSON.parse(opts.body) });
+      return jsonResponse({
+        results: [{
+          id: created.message_id,
+          status: 'failed',
+          reason: 'hub overloaded',
+          retryable: true,
+          retry_after_ms: 30_000,
+          terminal: false,
+        }],
+      });
+    });
+
+    try {
+      const sync = new OutboundSync({
+        store,
+        hubUrl: 'https://hub.example.test',
+        getHeaders: () => ({ Authorization: 'Bearer test' }),
+        logger: { error: () => {}, warn: () => {}, log: () => {} },
+      });
+
+      const first = await sync.flush();
+      const deferred = store.getById(created.message_id);
+      const second = await sync.flush();
+
+      assert.equal(first.sent, 1);
+      assert.equal(first.deferred, 1);
+      assert.equal(deferred.status, 'pending');
+      assert.equal(deferred.retry_count, 0);
+      assert.match(deferred.error, /hub overloaded/);
+      assert.ok(deferred.next_retry_at > Date.now());
+      assert.equal(second.sent, 0);
+      assert.equal(requests.length, 1, 'deferred message should not be resent before next_retry_at');
+    } finally {
+      store.close();
+      try { fs.rmSync(dataDir, { recursive: true }); } catch {}
+    }
+  });
+
+  it('treats terminal per-message Hub failures as final', async () => {
+    const dataDir = tmpDataDir();
+    const store = new MailboxStore(dataDir);
+    store.setState('node_id', 'node_test_terminal_result');
+    const created = store.send({
+      type: 'proxy_trace',
+      priority: 'low',
+      payload: {
+        schema: 'prism_trace_row.v1',
+        encrypted: true,
+        trace: encryptedTrace('dGVybWluYWw='),
+      },
+    });
+
+    hubFetchMod._setFetchImplForTest(async () => jsonResponse({
+      results: [{
+        id: created.message_id,
+        status: 'failed',
+        reason: 'invalid_proxy_trace_payload_schema',
+        terminal: true,
+      }],
+    }));
+
+    try {
+      const sync = new OutboundSync({
+        store,
+        hubUrl: 'https://hub.example.test',
+        getHeaders: () => ({ Authorization: 'Bearer test' }),
+        logger: { error: () => {}, warn: () => {}, log: () => {} },
+      });
+
+      const result = await sync.flush();
+      const terminal = store.getById(created.message_id);
+
+      assert.equal(result.sent, 1);
+      assert.equal(result.synced, 1);
+      assert.equal(terminal.status, 'failed');
+      assert.equal(terminal.retry_count, 0);
+      assert.match(terminal.error, /invalid_proxy_trace_payload_schema/);
+      assert.equal(store.countPending({ direction: 'outbound' }), 0);
+    } finally {
+      store.close();
+      try { fs.rmSync(dataDir, { recursive: true }); } catch {}
+    }
+  });
+
+  // Bugbot PR #301 (High): a terminal:true hint must win even when the same
+  // result also carries retryAfterMs / retryable:true. Before the fix the
+  // defer branch fired first on the retry hint and parked a final message for
+  // retry, so it stayed pending and was resent.
+  it('treats terminal as final even when the result also carries retry hints', async () => {
+    const dataDir = tmpDataDir();
+    const store = new MailboxStore(dataDir);
+    const requests = [];
+    store.setState('node_id', 'node_test_terminal_with_retry_hint');
+    const created = store.send({
+      type: 'proxy_trace',
+      priority: 'low',
+      payload: {
+        schema: 'prism_trace_row.v1',
+        encrypted: true,
+        trace: encryptedTrace('dGVybWluYWwtcmV0cnk='),
+      },
+    });
+
+    hubFetchMod._setFetchImplForTest(async (url, opts) => {
+      requests.push({ url, body: JSON.parse(opts.body) });
+      return jsonResponse({
+        results: [{
+          id: created.message_id,
+          status: 'failed',
+          reason: 'invalid_proxy_trace_payload_schema',
+          // Contradictory but possible: terminal plus retry hints. Terminal wins.
+          terminal: true,
+          retryable: true,
+          retry_after_ms: 30_000,
+        }],
+      });
+    });
+
+    try {
+      const sync = new OutboundSync({
+        store,
+        hubUrl: 'https://hub.example.test',
+        getHeaders: () => ({ Authorization: 'Bearer test' }),
+        logger: { error: () => {}, warn: () => {}, log: () => {} },
+      });
+
+      const first = await sync.flush();
+      const row = store.getById(created.message_id);
+      const second = await sync.flush();
+
+      assert.equal(first.synced, 1, 'terminal result must be finalized, not deferred');
+      assert.notEqual(first.deferred, 1, 'terminal result must NOT count as deferred');
+      assert.equal(row.status, 'failed', 'terminal message must end as failed');
+      assert.equal(row.retry_count, 0);
+      assert.ok(!row.next_retry_at, 'terminal message must not be parked for retry');
+      assert.equal(store.countPending({ direction: 'outbound' }), 0);
+      assert.equal(second.sent, 0, 'nothing left to resend');
+      assert.equal(requests.length, 1, 'terminal message must never be resent');
+    } finally {
+      store.close();
+      try { fs.rmSync(dataDir, { recursive: true }); } catch {}
+    }
+  });
+
+  // Bugbot PR #301 (Low): a terminal rejection with no error/reason must keep
+  // a meaningful label ('rejected by hub'), not the retry-exhaustion 'max
+  // retries' fallback (it never retried).
+  it('labels a terminal rejection without error/reason as rejected by hub, not max retries', async () => {
+    const dataDir = tmpDataDir();
+    const store = new MailboxStore(dataDir);
+    store.setState('node_id', 'node_test_terminal_no_reason');
+    const created = store.send({
+      type: 'proxy_trace',
+      priority: 'low',
+      payload: {
+        schema: 'prism_trace_row.v1',
+        encrypted: true,
+        trace: encryptedTrace('dGVybWluYWwtbm8tcmVhc29u'),
+      },
+    });
+
+    hubFetchMod._setFetchImplForTest(async () => jsonResponse({
+      results: [{ id: created.message_id, status: 'failed', terminal: true }],
+    }));
+
+    try {
+      const sync = new OutboundSync({
+        store,
+        hubUrl: 'https://hub.example.test',
+        getHeaders: () => ({ Authorization: 'Bearer test' }),
+        logger: { error: () => {}, warn: () => {}, log: () => {} },
+      });
+
+      await sync.flush();
+      const row = store.getById(created.message_id);
+      assert.equal(row.status, 'failed');
+      assert.match(row.error, /rejected by hub/);
+      assert.doesNotMatch(row.error, /max retries/, 'terminal rejection must not be labeled retry-exhausted');
+    } finally {
+      store.close();
+      try { fs.rmSync(dataDir, { recursive: true }); } catch {}
+    }
+  });
+
   it('backs down the outbound batch budget when Hub returns 413 for multiple messages', async () => {
     const dataDir = tmpDataDir();
     const store = new MailboxStore(dataDir);

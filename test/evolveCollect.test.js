@@ -202,17 +202,43 @@ describe('readMemorySnippet / readUserSnippet / readRealSessionLog fallback (#54
     const tmp = mkTmp();
     try {
       fs.writeFileSync(path.join(tmp, 'AGENTS.md'),
-        '# Hello\n\n<!-- evolver-evolution-memory -->\n## Evolution Memory (Evolver)\n\nuse gep_recall.\nSignals: log_error, perf_bottleneck.\n\n## Other section\n\nunrelated.\n',
+        '# Hello\n\n<!-- evolver-evolution-memory -->\n## Evolution Memory (Evolver)\n\nFor substantive tasks, call gep_recall before work and gep_record_outcome after.\nSignals: log_error, perf_bottleneck.\n\n## Other section\n\nunrelated.\n',
         'utf8');
       const out = runInChild(tmp);
       assert.match(out.mem, /Sourced from AGENTS\.md/);
-      assert.match(out.mem, /gep_recall/);
+      assert.doesNotMatch(out.mem, /gep_recall/);
+      assert.doesNotMatch(out.mem, /gep_record_outcome/);
+      assert.match(out.mem, /Signals: log_error, perf_bottleneck/);
       assert.match(out.mem, /UNTRUSTED-INPUT/, 'fallback must be fenced as untrusted');
       assert.ok(!out.mem.includes('MEMORY.md MISSING'),
         'legacy MISSING token must not appear when fallback succeeds');
       // readUserSnippet must NOT surface AGENTS.md content (LOW).
       assert.equal(out.usr, '[USER.md MISSING]',
         'AGENTS.md is evolution memory, not user profile — must not duplicate under [User Profile]');
+    } finally { rmTmp(tmp); }
+  });
+
+  it('strips only the exact legacy routine directive from marked fallback prose', () => {
+    const tmp = mkTmp();
+    try {
+      fs.writeFileSync(path.join(tmp, 'AGENTS.md'),
+        [
+          '<!-- evolver-evolution-memory -->',
+          '## Evolution Memory (Evolver)',
+          '',
+          'For substantive tasks, call `gep_recall` before work and `gep_record_outcome` after',
+          'For substantive tasks we prefer dry runs.',
+          'Plan before work and validate after.',
+          'Signals: log_error, perf_bottleneck.',
+          '',
+        ].join('\n'),
+        'utf8');
+      const out = runInChild(tmp);
+      assert.doesNotMatch(out.mem, /gep_recall/);
+      assert.doesNotMatch(out.mem, /gep_record_outcome/);
+      assert.match(out.mem, /For substantive tasks we prefer dry runs\./);
+      assert.match(out.mem, /Plan before work and validate after\./);
+      assert.match(out.mem, /Signals: log_error, perf_bottleneck\./);
     } finally { rmTmp(tmp); }
   });
 
@@ -426,24 +452,24 @@ describe('readMemorySnippet / readUserSnippet / readRealSessionLog fallback (#54
         'utf8'
       );
       const out = runInChild(tmp);
-      // readMemorySnippet's fallback chain is unchanged — it requires an
-      // AGENTS.md marker or USER/MEMORY.md, neither of which exist here.
-      assert.equal(out.mem, '[MEMORY.md MISSING]');
-      // readUserSnippet and _sessionLogFallback now honor the graph-any-tail
-      // tier, so neither must contain the literal MISSING strings that
-      // signals.js (gep/signals.js:348-351) keys on.
+      // readMemorySnippet, readUserSnippet and _sessionLogFallback now honor
+      // the graph-any-tail tier, so none must contain the literal MISSING
+      // strings that signals.js (gep/signals.js:348-351) keys on.
+      assert.ok(!/MEMORY\.md MISSING/i.test(out.mem),
+        `out.mem must not be the legacy MISSING placeholder when graph is accumulating: ${out.mem}`);
       assert.ok(!/USER\.md MISSING/i.test(out.usr),
         `out.usr must not be the legacy MISSING placeholder when graph is accumulating: ${out.usr}`);
       assert.ok(!/no session logs found/i.test(out.sess),
         `out.sess must not be the legacy MISSING placeholder when graph is accumulating: ${out.sess}`);
-      // Both should reference the any-tail summary so the reviewer model
+      // All three should reference the any-tail summary so the reviewer model
       // sees the genuine evidence the graph is filling up.
+      assert.match(out.mem, /memory_graph\.jsonl/);
       assert.match(out.usr, /memory_graph\.jsonl/);
       assert.match(out.sess, /memory_graph\.jsonl/);
     } finally { rmTmp(tmp); }
   });
 
-  it('AGENTS.md takes precedence over memory_graph for the memory snippet', () => {
+  it('memory_graph takes precedence over AGENTS.md for the memory snippet', () => {
     const tmp = mkTmp();
     try {
       fs.writeFileSync(path.join(tmp, 'AGENTS.md'),
@@ -457,8 +483,8 @@ describe('readMemorySnippet / readUserSnippet / readRealSessionLog fallback (#54
         'utf8'
       );
       const out = runInChild(tmp);
-      assert.match(out.mem, /AGENTS-md-wins/);
-      assert.ok(!out.mem.includes('graph-tail'));
+      assert.match(out.mem, /graph-tail/);
+      assert.ok(!out.mem.includes('AGENTS-md-wins'));
     } finally { rmTmp(tmp); }
   });
 

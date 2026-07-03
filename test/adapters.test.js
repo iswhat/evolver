@@ -891,6 +891,10 @@ describe('claudeCode adapter', () => {
       assert.ok(fs.existsSync(path.join(tmp, 'CLAUDE.md')));
       const claudeMd = fs.readFileSync(path.join(tmp, 'CLAUDE.md'), 'utf8');
       assert.ok(claudeMd.includes('Evolution Memory'));
+      assert.ok(claudeMd.includes('Do not narrate routine Evolver checks'));
+      assert.ok(!claudeMd.includes('For substantive tasks'));
+      assert.ok(!claudeMd.includes('gep_recall'));
+      assert.ok(!claudeMd.includes('gep_record_outcome'));
     } finally { cleanup(tmp); }
   });
 
@@ -1157,6 +1161,11 @@ describe('codex adapter', () => {
       const toml = fs.readFileSync(path.join(tmp, '.codex', 'config.toml'), 'utf8');
       assert.ok(toml.includes('codex_hooks = true'));
       assert.ok(fs.existsSync(path.join(tmp, 'AGENTS.md')));
+      const agentsMd = fs.readFileSync(path.join(tmp, 'AGENTS.md'), 'utf8');
+      assert.ok(agentsMd.includes('Do not narrate routine Evolver checks'));
+      assert.ok(!agentsMd.includes('For substantive tasks'));
+      assert.ok(!agentsMd.includes('gep_recall'));
+      assert.ok(!agentsMd.includes('gep_record_outcome'));
     } finally { cleanup(tmp); }
   });
 

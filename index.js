@@ -833,7 +833,32 @@ function refuseHelloIfDaemonRunning(toolLabel) {
 async function main() {
   const args = process.argv.slice(2);
   const command = args[0];
-  const isLoop = args.includes('--loop') || args.includes('--mad-dog');
+  // Solo mode (--solo): the "constrained wild" profile. Implies loop (a solo
+  // run IS a Mad Dog loop) but hard-cuts the network + ATP, snapshots the
+  // target repo each cycle and rolls back on failure, and circuit-breaks on
+  // repeated failures instead of blind-respawning. It is a NEW side path — the
+  // wild --mad-dog / controlled-daemon behavior below is untouched when isSolo
+  // is false.
+  const isSolo = args.includes('--solo');
+  const isLoop = args.includes('--loop') || args.includes('--mad-dog') || isSolo;
+  // Solo lockdown: hard-cut network + autonomous spend at the SOURCE, in-process,
+  // before any module reads these envs. The block-level `if (!isSolo)` gates
+  // below are belt-and-suspenders for the startup path; THIS is what also closes
+  // the in-cycle paths (src/evolve/guards.js starts autoBuyer/autoDeliver from
+  // inside evolve.run()) and the validator daemon (network + staked credits).
+  // These are overwrites, not defaults — a user cannot re-enable ATP/hub/validator
+  // under --solo by setting the env themselves. That is the "no escape valve" the
+  // boss pinned. Numeric knobs (e.g. EVOLVER_SOLO_MAX_FAILS) stay tunable; the
+  // four safety cuts do not.
+  if (isSolo) {
+    process.env.A2A_HUB_URL = '';
+    process.env.EVOMAP_HUB_URL = '';
+    process.env.EVOLVER_ATP = 'off';           // getAtpMode() → 'off'
+    process.env.EVOLVER_ATP_AUTOBUY = 'off';    // getConsent() → disabled (env wins over ack)
+    process.env.EVOLVER_ATP_AUTODELIVER = 'off';
+    process.env.EVOLVER_VALIDATOR_ENABLED = 'false';
+    process.env.EVOMAP_PROXY = '0';
+  }
   const isVerbose = args.includes('--verbose') || args.includes('-v') ||
     String(process.env.EVOLVER_VERBOSE || '').toLowerCase() === 'true';
   if (isVerbose) process.env.EVOLVER_VERBOSE = 'true';
@@ -1414,6 +1439,9 @@ async function main() {
         const progressUpdateMs = parseMs(process.env.EVOLVER_PROGRESS_UPDATE_MS, 60000); // 1 min default
 
         // Start hub heartbeat (keeps node alive independently of evolution cycles)
+        if (isSolo) {
+          console.log('[Solo] 断网模式：不连 hub，不启心跳/SSE/proxy/validator，仅本地自进化。');
+        } else {
         try {
           if (process.env.EVOMAP_PROXY === '1' || process.env.A2A_TRANSPORT === 'mailbox') {
             const { startProxy } = require('./src/proxy');
@@ -1464,6 +1492,7 @@ async function main() {
         } catch (e) {
           console.warn('[Heartbeat] Failed to start: ' + (e.message || e));
         }
+        }
 
         // RecallVerify worker: starts once per process; drains the publish-
         // verification queue with backoff. unref'd so it never blocks exit.
@@ -1478,6 +1507,9 @@ async function main() {
         // Validator daemon: independent timer that fetches and executes
         // validation tasks regardless of the main evolve loop's idle gating.
         // Honors EVOLVER_VALIDATOR_ENABLED and the persisted feature flag.
+        // Solo: skip entirely — the validator uses network + staked credits, and
+        // its daemon timer arms even when disabled, so don't even construct it.
+        if (!isSolo) {
         try {
           const { startValidatorDaemon } = require('./src/gep/validator');
           if (startValidatorDaemon()) {
@@ -1485,6 +1517,7 @@ async function main() {
           }
         } catch (vdErr) {
           console.warn('[ValidatorDaemon] failed to start: ' + (vdErr && vdErr.message || vdErr));
+        }
         }
 
         // OAuth token auto-refresh: if a device-flow OAuth token is present,
@@ -1501,6 +1534,9 @@ async function main() {
         }
 
         // ATP: auto-start merchant agent if enabled
+        if (isSolo) {
+          console.log('[Solo] 禁 ATP：不加载自治交易模块，不碰花钱通道。');
+        } else {
         try {
           const { defaultHandler, merchantAgent } = require('./src/atp');
           const atpMode = defaultHandler.getAtpMode();
@@ -1607,12 +1643,29 @@ async function main() {
         } catch (autoBuyInitErr) {
           console.warn('[ATP-AutoBuyer] Init failed: ' + (autoBuyInitErr && autoBuyInitErr.message || autoBuyInitErr));
         }
+        }
 
         // Hoist module refs used inside the loop to avoid repeated module lookups per cycle
         const idleScheduler = require('./src/gep/idleScheduler');
         const { shouldDistillFromFailures: shouldDF, autoDistillFromFailures: autoDF } = require('./src/gep/skillDistiller');
         const { autoDistillLlm } = require('./src/gep/autoDistillLlm'); // P3: autonomous LLM distillation (shadow-first, off by default)
         const { tryExplore } = require('./src/gep/explore');
+
+        // Solo-mode setup (--solo): git safety net + circuit breaker. repoRoot is
+        // the TARGET project being evolved (getRepoRoot), NOT evolver's own source.
+        const gitGuard = isSolo ? require('./src/solo/gitGuard') : null;
+        const soloBreaker = isSolo ? require('./src/solo/breaker') : null;
+        const soloRepoRoot = isSolo ? require('./src/gep/paths').getRepoRoot() : null;
+        const soloMaxConsecutiveFailures = Math.max(1, parseMs(process.env.EVOLVER_SOLO_MAX_FAILS, 5) || 5);
+        let soloBreakerState = { consecutiveFailures: 0 };
+        if (isSolo) {
+          console.log('════════════════════════════════════════════════════════');
+          console.log('[Solo] Mad Dog · 受约束的野性模式已启动');
+          console.log('[Solo] 兜底四道：断网 · 禁ATP · 每 cycle git 快照/失败回滚 · 连续失败熔断');
+          console.log('[Solo] 默认免人审。目标仓：' + soloRepoRoot);
+          console.log('[Solo] 无 hub 审计，仅本地 git 可追溯。');
+          console.log('════════════════════════════════════════════════════════');
+        }
 
         let currentSleepMs = minSleepMs;
         let cycleCount = 0;
@@ -1630,6 +1683,9 @@ async function main() {
 
           const t0 = Date.now();
           let ok = false;
+          // Solo: snapshot the target repo before the cycle self-modifies it, so
+          // a failed cycle can be rolled back to this exact point.
+          const soloSnap = isSolo ? gitGuard.snapshot(soloRepoRoot) : null;
           // Issue #19: write progress at cycle start, refresh it every
           // progressUpdateMs (default 60s) while evolve.run() is active, and
           // wrap evolve.run() with Promise.race(timeout) so a hung internal
@@ -1715,6 +1771,23 @@ async function main() {
           }
           const dt = Date.now() - t0;
 
+          // Solo: on a failed cycle, roll the target repo back to the pre-cycle
+          // snapshot (undo the broken self-edit) and advance the circuit breaker;
+          // a good cycle resets it. The breaker trip (exit) is enforced just
+          // before the suicide block below.
+          if (isSolo) {
+            const b = soloBreaker.step(soloBreakerState, ok, soloMaxConsecutiveFailures);
+            soloBreakerState = b.state;
+            if (!ok) {
+              const rolledBack = gitGuard.rollbackTo(soloRepoRoot, soloSnap);
+              if (rolledBack) {
+                console.warn('[Solo] cycle 失败，已 git 回滚目标仓到 ' + String(soloSnap).slice(0, 12) + ' (连续失败 ' + soloBreakerState.consecutiveFailures + '/' + soloMaxConsecutiveFailures + ')');
+              } else {
+                console.error('[Solo] cycle 失败且回滚未成功（无快照或 git 出错）。连续失败 ' + soloBreakerState.consecutiveFailures + '/' + soloMaxConsecutiveFailures);
+              }
+            }
+          }
+
           // Adaptive sleep: treat very fast cycles as "idle", backoff; otherwise reset to min.
           if (!ok || dt < idleThresholdMs) {
             currentSleepMs = Math.min(maxSleepMs, Math.max(minSleepMs, currentSleepMs * 2));
@@ -1788,6 +1861,17 @@ async function main() {
             }
           } catch (e) {
             if (isVerbose) console.warn('[OMLS] Scheduler error: ' + (e.message || e));
+          }
+
+          // Solo circuit breaker: replace the wild loop's blind sleep-and-retry
+          // with a hard stop after N consecutive failures. Stopping (exit 1) —
+          // rather than respawning — is the point: a solo run that keeps failing
+          // must not thrash forever. An external supervisor may restart it, but
+          // the process itself refuses to blind-loop.
+          if (isSolo && soloBreakerState.consecutiveFailures >= soloMaxConsecutiveFailures) {
+            console.error('[Solo] 连续失败 ' + soloBreakerState.consecutiveFailures + ' 次达阈值，熔断停机（非盲重生）。');
+            releaseLock();
+            process.exit(1);
           }
 
           // Suicide check (memory leak protection). On Windows the

@@ -345,6 +345,7 @@ class MailboxStore {
       synced_at: null,
       expires_at: expiresAt || null,
       retry_count: 0,
+      next_retry_at: null,
       error: null,
     };
     this._appendMessage(msg);
@@ -372,6 +373,7 @@ class MailboxStore {
       synced_at: null,
       expires_at: expiresAt || null,
       retry_count: 0,
+      next_retry_at: null,
       error: null,
     };
     this._appendMessage(msg);
@@ -418,6 +420,7 @@ class MailboxStore {
       const msg = this._messages.get(id);
       if (!msg || msg.status !== 'pending') continue;
       if (msg.channel !== ch) continue;
+      if (Number.isFinite(Number(msg.next_retry_at)) && Number(msg.next_retry_at) > Date.now()) continue;
       candidates.push(msg);
     }
     candidates.sort((a, b) => {
@@ -450,7 +453,7 @@ class MailboxStore {
 
   updateStatus(id, status, { error, syncedAt } = {}) {
     const TERMINAL = new Set(['synced', 'delivered', 'failed', 'rejected']);
-    const fields = { status };
+    const fields = { status, next_retry_at: null };
     if (syncedAt) fields.synced_at = syncedAt;
     else if (status === 'synced') fields.synced_at = Date.now();
     if (error !== undefined) fields.error = error;
@@ -470,7 +473,16 @@ class MailboxStore {
   incrementRetry(id, error) {
     const msg = this._messages.get(id);
     const newCount = msg ? (msg.retry_count || 0) + 1 : 1;
-    this._appendUpdate(id, { retry_count: newCount, error: error || null });
+    this._appendUpdate(id, { retry_count: newCount, next_retry_at: null, error: error || null });
+  }
+
+  deferRetry(id, error, retryAfterMs) {
+    const delay = Math.max(1_000, Number.isFinite(Number(retryAfterMs)) ? Number(retryAfterMs) : 60_000);
+    this._appendUpdate(id, {
+      status: 'pending',
+      next_retry_at: Date.now() + delay,
+      error: error || null,
+    });
   }
 
   list({ type, direction, status, limit, offset } = {}) {
