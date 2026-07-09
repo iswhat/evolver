@@ -6,24 +6,105 @@
 // delegation), shifting from passive Hub-orchestrated mode to agent-initiated
 // mesh collaboration.
 
+// Session payload limits. Centralized so the route fallback and the
+// SessionHandler extension share one source of truth -- otherwise the
+// fallback path (when the extension is not registered) silently skips these
+// clamps/truncations and the wire contract diverges.
+const MAX_PARTICIPANTS = 20;
+const MIN_PARTICIPANTS = 2;
+const DEFAULT_PARTICIPANTS = 5;
+const MAX_INVITEES = 10;
+const MAX_PAYLOAD_BYTES = 16000;
+const MAX_SUMMARY_CHARS = 200;
+const VALID_ROLES = ['builder', 'planner', 'reviewer'];
+const DEFAULT_ROLE = 'builder';
+
+// Pure normalizers. Throw Error('...') on validation failure; the route
+// layer wraps the throw in a 400. Each accepts the wire shape (snake_case
+// keys) and returns the normalized payload (also snake_case). The handler
+// methods map their camelCase public API to snake_case before calling.
+
+// Normalize a /session/create body. Throws if `title` is missing.
+// `max_participants` is clamped to [MIN, MAX] (default DEFAULT).
+// `invite_node_ids` is sliced to the first MAX_INVITEES entries.
+function normalizeCreatePayload(body = {}) {
+  if (!body.title) throw new Error('title is required');
+  // Treat undefined/null/'' as missing (use default). Otherwise parse the
+  // value and clamp. `|| DEFAULT_PARTICIPANTS` would treat 0 as missing and
+  // silently change a legitimate 0 input into the default 5; the handler
+  // had this bug pre-refactor and the test suite caught it.
+  const raw = body.max_participants;
+  let num = Number(raw);
+  if (raw === undefined || raw === null || raw === '' || !Number.isFinite(num)) {
+    num = DEFAULT_PARTICIPANTS;
+  }
+  return {
+    title: body.title,
+    description: body.description || '',
+    invite_node_ids: Array.isArray(body.invite_node_ids) ? body.invite_node_ids.slice(0, MAX_INVITEES) : [],
+    max_participants: Math.max(MIN_PARTICIPANTS, Math.min(MAX_PARTICIPANTS, num)),
+  };
+}
+
+// Normalize a /session/message body. Throws if `session_id` is missing or
+// the serialized `payload` exceeds MAX_PAYLOAD_BYTES.
+function normalizeMessagePayload(body = {}) {
+  if (!body.session_id) throw new Error('session_id is required');
+  const safePayload = body.payload && typeof body.payload === 'object' ? body.payload : {};
+  const serialized = JSON.stringify(safePayload);
+  if (serialized.length > MAX_PAYLOAD_BYTES) throw new Error('payload too large (max 16KB)');
+  return {
+    session_id: body.session_id,
+    to_node_id: body.to_node_id || null,
+    msg_type: body.msg_type || 'context_update',
+    payload: safePayload,
+  };
+}
+
+// Normalize a /session/delegate body. Throws if `session_id` or `title` is
+// missing. `role` is whitelisted (unknown values fall back to DEFAULT_ROLE).
+function normalizeDelegatePayload(body = {}) {
+  if (!body.session_id) throw new Error('session_id is required');
+  if (!body.title) throw new Error('title is required');
+  return {
+    session_id: body.session_id,
+    to_node_id: body.to_node_id || null,
+    title: body.title,
+    description: body.description || '',
+    role: VALID_ROLES.includes(body.role) ? body.role : DEFAULT_ROLE,
+  };
+}
+
+// Normalize a /session/submit body. Throws if `session_id` or `task_id` is
+// missing. `summary` is truncated to MAX_SUMMARY_CHARS.
+function normalizeSubmitPayload(body = {}) {
+  if (!body.session_id) throw new Error('session_id is required');
+  if (!body.task_id) throw new Error('task_id is required');
+  const safeSummary = typeof body.summary === 'string' ? body.summary.slice(0, MAX_SUMMARY_CHARS) : '';
+  return {
+    session_id: body.session_id,
+    task_id: body.task_id,
+    result_asset_id: body.result_asset_id || null,
+    summary: safeSummary,
+  };
+}
+
 class SessionHandler {
   constructor({ store, logger } = {}) {
     this.store = store;
     this.logger = logger || console;
   }
 
-  createSession({ title, description, inviteNodeIds, maxParticipants } = {}) {
-    if (!title) throw new Error('title is required');
-
+  createSession(input = {}) {
+    const payload = normalizeCreatePayload({
+      title: input.title,
+      description: input.description,
+      invite_node_ids: input.inviteNodeIds,
+      max_participants: input.maxParticipants,
+    });
     return this.store.send({
       type: 'session_create',
-      payload: {
-        title,
-        description: description || '',
-        invite_node_ids: Array.isArray(inviteNodeIds) ? inviteNodeIds.slice(0, 10) : [],
-        max_participants: Math.max(2, Math.min(20, Number(maxParticipants) || 5)),
-        created_at: new Date().toISOString(),
-      },
+      payload: { ...payload, created_at: new Date().toISOString() },
       priority: 'high',
     });
   }
@@ -54,62 +135,45 @@ class SessionHandler {
     });
   }
 
-  sendMessage({ sessionId, toNodeId, msgType, payload } = {}) {
-    if (!sessionId) throw new Error('sessionId is required');
-
-    const safePayload = payload && typeof payload === 'object' ? payload : {};
-    const serialized = JSON.stringify(safePayload);
-    if (serialized.length > 16000) throw new Error('payload too large (max 16KB)');
-
+  sendMessage(input = {}) {
+    const payload = normalizeMessagePayload({
+      session_id: input.sessionId,
+      to_node_id: input.toNodeId,
+      msg_type: input.msgType,
+      payload: input.payload,
+    });
     return this.store.send({
       type: 'session_message',
-      payload: {
-        session_id: sessionId,
-        to_node_id: toNodeId || null,
-        msg_type: msgType || 'context_update',
-        payload: safePayload,
-        sent_at: new Date().toISOString(),
-      },
+      payload: { ...payload, sent_at: new Date().toISOString() },
       priority: 'normal',
     });
   }
 
-  delegateSubtask({ sessionId, toNodeId, title, description, role } = {}) {
-    if (!sessionId) throw new Error('sessionId is required');
-    if (!title) throw new Error('title is required');
-
-    const VALID_ROLES = ['builder', 'planner', 'reviewer'];
-    const safeRole = VALID_ROLES.includes(role) ? role : 'builder';
-
+  delegateSubtask(input = {}) {
+    const payload = normalizeDelegatePayload({
+      session_id: input.sessionId,
+      to_node_id: input.toNodeId,
+      title: input.title,
+      description: input.description,
+      role: input.role,
+    });
     return this.store.send({
       type: 'session_delegate',
-      payload: {
-        session_id: sessionId,
-        to_node_id: toNodeId || null,
-        title,
-        description: description || '',
-        role: safeRole,
-        delegated_at: new Date().toISOString(),
-      },
+      payload: { ...payload, delegated_at: new Date().toISOString() },
       priority: 'high',
     });
   }
 
-  submitResult({ sessionId, taskId, resultAssetId, summary } = {}) {
-    if (!sessionId) throw new Error('sessionId is required');
-    if (!taskId) throw new Error('taskId is required');
-
-    const safeSummary = typeof summary === 'string' ? summary.slice(0, 200) : '';
-
+  submitResult(input = {}) {
+    const payload = normalizeSubmitPayload({
+      session_id: input.sessionId,
+      task_id: input.taskId,
+      result_asset_id: input.resultAssetId,
+      summary: input.summary,
+    });
     return this.store.send({
       type: 'session_submit',
-      payload: {
-        session_id: sessionId,
-        task_id: taskId,
-        result_asset_id: resultAssetId || null,
-        summary: safeSummary,
-        submitted_at: new Date().toISOString(),
-      },
+      payload: { ...payload, submitted_at: new Date().toISOString() },
       priority: 'high',
     });
   }
@@ -138,4 +202,10 @@ class SessionHandler {
   }
 }
 
-module.exports = { SessionHandler };
+module.exports = {
+  SessionHandler,
+  normalizeCreatePayload,
+  normalizeMessagePayload,
+  normalizeDelegatePayload,
+  normalizeSubmitPayload,
+};

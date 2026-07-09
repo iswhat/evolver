@@ -16,6 +16,7 @@
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
+const { request } = require('undici');
 
 const {
   buildMessagesHandler,
@@ -95,6 +96,84 @@ describe('canonicalizeForBedrock', () => {
       canonicalizeForBedrock('us.anthropic.claude-haiku-4-5-20251001-v1:0'),
       'global.anthropic.claude-haiku-4-5-20251001-v1:0',
     );
+  });
+
+  // Tripwire: when Anthropic ships sonnet-4-7 on Bedrock InvokeModel, this
+  // test fails until the operator adds the entry to KNOWN_BEDROCK_ALIASES.
+  // The probe fetches the AWS Bedrock "Supported foundation models" doc —
+  // which AWS maintains in lockstep with InvokeModel availability — and
+  // checks for the canonical alias. A real Bedrock InvokeModel probe would
+  // require AWS credentials + an enabled model + region, which is out of
+  // scope for a unit test; the docs page is the lightweight ground-truth
+  // source we tie the assertion to.
+  //
+  // Two failure modes this test guards against:
+  //   1. Operator adds a fake alias (typo or guessed ID) before Bedrock
+  //      actually accepts it — the probe would say "not shipped", the
+  //      assertion expects passthrough, the canonicalizer's returned
+  //      fake ID trips the test.
+  //   2. Operator adds the right alias in the wrong format (dated suffix
+  //      when bare is canonical, or `us.*` when `global.*` is) — the
+  //      probe asserts the exact string, so a wrong format fails.
+  //
+  // On failure the message tells the operator exactly what to do: verify
+  // the alias on the AWS doc page, then add it to KNOWN_BEDROCK_ALIASES
+  // in the same format the probe found.
+  // AWS_BEDROCK_PROBE=0 opts the tripwire out of the live network probe
+  // (useful for fast local iteration or CI environments without outbound
+  // access to docs.aws.amazon.com). When disabled, the test assumes
+  // sonnet-4-7 has NOT shipped and asserts passthrough — same behavior
+  // as the network-unavailable fall-through path.
+  it("canonicalizeForBedrock('claude-sonnet-4-7') trips when AWS Bedrock docs list the alias (ground-truth for InvokeModel availability)", async (t) => {
+    const PROBE_DISABLED = process.env.AWS_BEDROCK_PROBE === '0';
+    const SONNET_4_7_BEDROCK_ID = 'global.anthropic.claude-sonnet-4-7';
+    const AWS_BEDROCK_DOCS_URL =
+      'https://docs.aws.amazon.com/bedrock/latest/userguide/models-supported.html';
+
+    let aliasShipped = false;
+    let probeNote = '';
+    if (PROBE_DISABLED) {
+      probeNote = 'AWS_BEDROCK_PROBE=0: probe skipped; assuming not shipped';
+    } else try {
+      const { statusCode, body } = await request(AWS_BEDROCK_DOCS_URL, {
+        headersTimeout: 5000,
+        bodyTimeout: 5000,
+      });
+      if (statusCode === 200) {
+        const html = await body.text();
+        aliasShipped = html.includes(SONNET_4_7_BEDROCK_ID);
+        probeNote = `AWS doc probe (${AWS_BEDROCK_DOCS_URL}): ` +
+          `${aliasShipped ? 'FOUND' : 'NOT FOUND'} \`${SONNET_4_7_BEDROCK_ID}\``;
+      } else {
+        probeNote = `AWS doc probe returned HTTP ${statusCode}; assuming not shipped`;
+      }
+    } catch (err) {
+      probeNote = `AWS doc probe unavailable (${err && err.message}); assuming not shipped`;
+    }
+    t.diagnostic(probeNote);
+
+    const actual = canonicalizeForBedrock('claude-sonnet-4-7');
+
+    if (aliasShipped) {
+      assert.equal(
+        actual,
+        SONNET_4_7_BEDROCK_ID,
+        `Anthropic has shipped \`${SONNET_4_7_BEDROCK_ID}\` on Bedrock InvokeModel ` +
+          `(verified at ${AWS_BEDROCK_DOCS_URL}), but canonicalizeForBedrock ` +
+          `does not return it. Add 'sonnet/4/7': '${SONNET_4_7_BEDROCK_ID}' to ` +
+          `KNOWN_BEDROCK_ALIASES in src/proxy/router/messages_route.js (verify ` +
+          `bare-vs-dated format from the AWS doc before pasting).`,
+      );
+    } else {
+      assert.equal(
+        actual,
+        'claude-sonnet-4-7',
+        `Anthropic has NOT shipped sonnet-4-7 on Bedrock InvokeModel yet ` +
+          `(verified at ${AWS_BEDROCK_DOCS_URL}). canonicalizeForBedrock ` +
+          `must passthrough. When the probe shows it shipped, update ` +
+          `KNOWN_BEDROCK_ALIASES.`,
+      );
+    }
   });
 });
 

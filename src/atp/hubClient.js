@@ -160,6 +160,18 @@ function _get(proxyPath, hubPath, timeoutMs) {
   return _hubGet(hubPath, timeoutMs);
 }
 
+// Coerce an order `budget` input. The previous `Number(x) || 10` form
+// treated 0 as missing and silently substituted the default, so an
+// explicit `budget: 0` request was sent as 10 instead of clamping to the
+// floor of 1. Mirrors the falsy-zero fix in
+// sessionHandler.js#normalizeCreatePayload: explicit undefined / null /
+// '' checks first, then `Number.isFinite` to guard the strict-zero case.
+function _coerceBudget(raw) {
+  if (raw === undefined || raw === null || raw === '') return 10;
+  const n = Number(raw);
+  return Number.isFinite(n) ? Math.max(1, Math.round(n)) : 10;
+}
+
 /**
  * POST /a2a/atp/order -- place an ATP order with routing
  * @param {object} opts
@@ -176,7 +188,7 @@ function placeOrder(opts) {
   return _post('/atp/order', '/a2a/atp/order', {
     sender_id: nodeId,
     capabilities: opts.capabilities,
-    budget: Math.max(1, Math.round(Number(opts.budget) || 10)),
+    budget: _coerceBudget(opts.budget),
     routing_mode: opts.routingMode || 'fastest',
     verify_mode: opts.verifyMode || 'auto',
     question: opts.question,

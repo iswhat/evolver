@@ -228,7 +228,7 @@ describe('EvoMapProxy._proxyOpenAIResponses', () => {
     const unsafeProxy = new EvoMapProxy({ logger: { log: () => {}, warn: () => {}, error: () => {} } });
     await assert.rejects(
       () => unsafeProxy._proxyOpenAIResponses('/responses', { model: 'gpt-5.5', input: 'hi' }, { inboundHeaders: {} }),
-      /EVOMAP_OPENAI_BASE_URL must be an OpenAI https/,
+      /EVOMAP_OPENAI_BASE_URL must be an OpenAI or known OpenAI-compatible https \/v1 endpoint/,
     );
   });
 
@@ -245,12 +245,89 @@ describe('EvoMapProxy._proxyOpenAIResponses', () => {
       const unsafeProxy = new EvoMapProxy({ logger: { log: () => {}, warn: () => {}, error: () => {} } });
       await assert.rejects(
         () => unsafeProxy._proxyOpenAIResponses('/responses', { model: 'gpt-5.5', input: raw }, { inboundHeaders: {} }),
-        /EVOMAP_OPENAI_BASE_URL must be an OpenAI https/,
+        /EVOMAP_OPENAI_BASE_URL must be an OpenAI or known OpenAI-compatible https \/v1 endpoint/,
       );
     }
   });
 
   it('accepts OpenAI regional HTTPS base URLs from environment', () => {
     assert.equal(resolveOpenAIBaseUrl('https://us.api.openai.com/v1/'), 'https://us.api.openai.com/v1');
+  });
+
+  it('accepts the MiniMax OpenAI-compatible base URL from environment', () => {
+    assert.equal(resolveOpenAIBaseUrl('https://api.minimax.io/v1/'), 'https://api.minimax.io/v1');
+  });
+});
+
+describe('resolveOpenAIBaseUrl — operator-extensible compatible allowlist', () => {
+  const ENV_KEY = 'EVOMAP_OPENAI_COMPATIBLE_BASE_URLS';
+  let saved;
+  beforeEach(() => { saved = process.env[ENV_KEY]; });
+  const restore = () => {
+    if (saved === undefined) delete process.env[ENV_KEY];
+    else process.env[ENV_KEY] = saved;
+  };
+
+  it('rejects an unknown compatible host when the env allowlist is unset', () => {
+    delete process.env[ENV_KEY];
+    try {
+      assert.throws(
+        () => resolveOpenAIBaseUrl('https://api.deepseek.com/v1'),
+        /must be an OpenAI or known OpenAI-compatible https \/v1 endpoint/,
+      );
+    } finally { restore(); }
+  });
+
+  it('accepts a host declared via EVOMAP_OPENAI_COMPATIBLE_BASE_URLS', () => {
+    process.env[ENV_KEY] = 'https://api.deepseek.com/v1';
+    try {
+      assert.equal(resolveOpenAIBaseUrl('https://api.deepseek.com/v1/'), 'https://api.deepseek.com/v1');
+    } finally { restore(); }
+  });
+
+  it('accepts any of several comma-separated declared hosts', () => {
+    process.env[ENV_KEY] = 'https://api.deepseek.com/v1, https://api.moonshot.cn/v1';
+    try {
+      assert.equal(resolveOpenAIBaseUrl('https://api.moonshot.cn/v1'), 'https://api.moonshot.cn/v1');
+    } finally { restore(); }
+  });
+
+  it('keeps the built-in MiniMax entry even when the env allowlist is set', () => {
+    process.env[ENV_KEY] = 'https://api.deepseek.com/v1';
+    try {
+      assert.equal(resolveOpenAIBaseUrl('https://api.minimax.io/v1'), 'https://api.minimax.io/v1');
+    } finally { restore(); }
+  });
+
+  it('does not let a declared entry relax the https/ /v1 / no-credentials checks', () => {
+    // The requested URL must still be structurally safe on its own; declaring a
+    // host in the env never waives the per-request gate.
+    process.env[ENV_KEY] = 'https://api.deepseek.com/v1';
+    try {
+      for (const unsafe of [
+        'http://api.deepseek.com/v1',            // not https
+        'https://api.deepseek.com/v2',           // wrong path
+        'https://user:pass@api.deepseek.com/v1', // embedded credentials
+        'https://api.deepseek.com/v1?x=1',       // query
+      ]) {
+        assert.throws(
+          () => resolveOpenAIBaseUrl(unsafe),
+          /must be an OpenAI or known OpenAI-compatible https \/v1 endpoint/,
+          `expected ${unsafe} to be rejected`,
+        );
+      }
+    } finally { restore(); }
+  });
+
+  it('ignores malformed env entries instead of trusting them', () => {
+    // A non-https / non-/v1 declaration is dropped, so it grants no access and
+    // a request to that host is still rejected.
+    process.env[ENV_KEY] = 'not-a-url, http://api.deepseek.com/v1, https://api.deepseek.com/models';
+    try {
+      assert.throws(
+        () => resolveOpenAIBaseUrl('https://api.deepseek.com/v1'),
+        /must be an OpenAI or known OpenAI-compatible https \/v1 endpoint/,
+      );
+    } finally { restore(); }
   });
 });

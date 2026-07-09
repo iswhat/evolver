@@ -29,12 +29,61 @@ const TRACE_BACKFILL_RUNTIME_DRAIN_MAX_MS = 50;
 function _defaultDataDir() { return getEvomapPath('mailbox'); }
 
 const DEFAULT_OPENAI_BASE_URL = 'https://api.openai.com/v1';
+const OPENAI_COMPATIBLE_BASE_URLS = Object.freeze({
+  minimax: 'https://api.minimax.io/v1',
+});
 const DEFAULT_GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com';
 const DEFAULT_OLLAMA_BASE_URL = 'http://127.0.0.1:11434';
 
 function isAllowedOpenAIHostname(hostname) {
   const h = String(hostname || '').toLowerCase();
   return h === 'api.openai.com' || h.endsWith('.api.openai.com');
+}
+
+// Structural safety gate shared by the inbound base URL and every
+// operator-declared compatible endpoint. The allowlist only ever widens which
+// *host* is reachable; https, an exact /v1 path, and the absence of embedded
+// credentials/query/fragment are enforced for every candidate. Returns the
+// canonical `origin + /v1` string when the URL is structurally safe, else null.
+function canonicalCompatibleBaseUrl(raw) {
+  let parsed;
+  try {
+    parsed = new URL(String(raw || '').trim().replace(/\/+$/, ''));
+  } catch {
+    return null;
+  }
+  if (
+    parsed.protocol !== 'https:'
+    || parsed.pathname !== '/v1'
+    || parsed.username
+    || parsed.password
+    || parsed.search
+    || parsed.hash
+  ) {
+    return null;
+  }
+  return `${parsed.origin}${parsed.pathname}`;
+}
+
+// Operator-extensible allowlist of OpenAI-compatible upstreams. Built-in
+// entries (minimax) ship trusted; EVOMAP_OPENAI_COMPATIBLE_BASE_URLS lets a
+// self-hosting operator declare additional comma-separated endpoints (e.g.
+// DeepSeek, Moonshot). Each env entry must independently pass the same
+// https + /v1 + no-credentials checks as canonicalCompatibleBaseUrl — the env
+// widens the host allowlist, never the structural safety checks. Malformed
+// entries are dropped, so a typo'd endpoint simply fails to grant access
+// rather than weakening the gate. Read per call so config changes need no
+// restart and the read stays after dotenv init (no module-load env capture).
+function allowedCompatibleBaseUrls() {
+  const set = new Set(Object.values(OPENAI_COMPATIBLE_BASE_URLS));
+  const extra = process.env.EVOMAP_OPENAI_COMPATIBLE_BASE_URLS;
+  if (extra) {
+    for (const entry of String(extra).split(',')) {
+      const canonical = canonicalCompatibleBaseUrl(entry);
+      if (canonical) set.add(canonical);
+    }
+  }
+  return set;
 }
 
 function resolveOpenAIBaseUrl(raw, { trustedOverride = false } = {}) {
@@ -47,16 +96,19 @@ function resolveOpenAIBaseUrl(raw, { trustedOverride = false } = {}) {
   } catch {
     throw new Error('[proxy] EVOMAP_OPENAI_BASE_URL is not a valid URL');
   }
+
+  const canonicalValue = `${parsed.origin}${parsed.pathname}`;
+  const allowedCompatibleUrl = allowedCompatibleBaseUrls().has(canonicalValue);
   if (
     parsed.protocol !== 'https:'
-    || !isAllowedOpenAIHostname(parsed.hostname)
+    || (!isAllowedOpenAIHostname(parsed.hostname) && !allowedCompatibleUrl)
     || parsed.pathname !== '/v1'
     || parsed.username
     || parsed.password
     || parsed.search
     || parsed.hash
   ) {
-    throw new Error('[proxy] EVOMAP_OPENAI_BASE_URL must be an OpenAI https://*.api.openai.com/v1 endpoint');
+    throw new Error('[proxy] EVOMAP_OPENAI_BASE_URL must be an OpenAI or known OpenAI-compatible https /v1 endpoint');
   }
   return value;
 }
@@ -1392,4 +1444,7 @@ module.exports = {
   planAssetSearch,
   parseRetryAfterMs,
   resolveOpenAIBaseUrl,
+  OPENAI_COMPATIBLE_BASE_URLS,
+  allowedCompatibleBaseUrls,
+  canonicalCompatibleBaseUrl,
 };

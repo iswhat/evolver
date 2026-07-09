@@ -496,6 +496,96 @@ describe('ProxyHttpServer', () => {
         'small bodies must still pass: got ' + res.status);
     });
   });
+
+  // Session routes exercised in fallback mode (buildRoutes called with
+  // `extensions: {}`, so the route's `if (sessionHandler)` branch is skipped
+  // and the new shared normalizers run instead). These tests verify that the
+  // fallback path applies the same input validation as the SessionHandler
+  // extension, closing the wire-contract inconsistency.
+  describe('Session routes (fallback path)', () => {
+    it('POST /session/create clamps max_participants to 20', async () => {
+      const res = await authedReq(`${baseUrl}/session/create`, 'POST', {
+        title: 'Test',
+        max_participants: 100,
+      });
+      assert.equal(res.status, 200);
+      const msg = store.getById(res.body.message_id);
+      assert.equal(msg.payload.max_participants, 20);
+    });
+
+    it('POST /session/create clamps max_participants to minimum of 2', async () => {
+      const res = await authedReq(`${baseUrl}/session/create`, 'POST', {
+        title: 'Test',
+        max_participants: 0,
+      });
+      assert.equal(res.status, 200);
+      const msg = store.getById(res.body.message_id);
+      assert.equal(msg.payload.max_participants, 2);
+    });
+
+    it('POST /session/create slices invite_node_ids to first 10', async () => {
+      const ids = Array.from({ length: 15 }, (_, i) => 'n' + i);
+      const res = await authedReq(`${baseUrl}/session/create`, 'POST', {
+        title: 'Test',
+        invite_node_ids: ids,
+      });
+      assert.equal(res.status, 200);
+      const msg = store.getById(res.body.message_id);
+      assert.equal(msg.payload.invite_node_ids.length, 10);
+    });
+
+    it('POST /session/create rejects missing title with 400', async () => {
+      const res = await authedReq(`${baseUrl}/session/create`, 'POST', {});
+      assert.equal(res.status, 400);
+    });
+
+    it('POST /session/join returns 400 on missing session_id', async () => {
+      const res = await authedReq(`${baseUrl}/session/join`, 'POST', {});
+      assert.equal(res.status, 400);
+    });
+
+    it('POST /session/leave returns 400 on missing session_id', async () => {
+      const res = await authedReq(`${baseUrl}/session/leave`, 'POST', {});
+      assert.equal(res.status, 400);
+    });
+
+    it('POST /session/message rejects oversized payload with 400', async () => {
+      const res = await authedReq(`${baseUrl}/session/message`, 'POST', {
+        session_id: 's1',
+        payload: { data: 'x'.repeat(20000) },
+      });
+      assert.equal(res.status, 400);
+    });
+
+    it('POST /session/delegate normalizes invalid role to builder', async () => {
+      const res = await authedReq(`${baseUrl}/session/delegate`, 'POST', {
+        session_id: 's1',
+        title: 'task',
+        role: 'invalid',
+      });
+      assert.equal(res.status, 200);
+      const msg = store.getById(res.body.message_id);
+      assert.equal(msg.payload.role, 'builder');
+    });
+
+    it('POST /session/submit truncates summary to 200 chars', async () => {
+      const res = await authedReq(`${baseUrl}/session/submit`, 'POST', {
+        session_id: 's1',
+        task_id: 't1',
+        summary: 'x'.repeat(300),
+      });
+      assert.equal(res.status, 200);
+      const msg = store.getById(res.body.message_id);
+      assert.equal(msg.payload.summary.length, 200);
+    });
+
+    it('POST /session/submit returns 400 on missing task_id', async () => {
+      const res = await authedReq(`${baseUrl}/session/submit`, 'POST', {
+        session_id: 's1',
+      });
+      assert.equal(res.status, 400);
+    });
+  });
 });
 
 describe('EvoMapProxy._buildBundleFromLooseAsset', () => {

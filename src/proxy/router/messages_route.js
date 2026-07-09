@@ -82,6 +82,12 @@ const KNOWN_BEDROCK_ALIASES = Object.freeze({
   'sonnet/4/6': 'global.anthropic.claude-sonnet-4-6',
 });
 
+// TODO: add 'sonnet/4/7' to KNOWN_BEDROCK_ALIASES once Anthropic ships it on
+// Bedrock. Follow the existing entries above for the ID shape: dated models
+// carry the full `...-<date>-v1:0` suffix (see haiku/4/5) while a bare family
+// alias omits it (see sonnet/4/6) — confirm the actual InvokeModel ID from the
+// AWS Bedrock model catalog before adding it, don't guess the suffix.
+
 function canonicalizeForBedrock(modelId) {
   const parsed = parseClaudeId(modelId);
   if (!parsed) return modelId;

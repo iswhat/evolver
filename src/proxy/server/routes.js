@@ -1,6 +1,21 @@
 'use strict';
 
 const { PROXY_PROTOCOL_VERSION, SCHEMA_VERSION } = require('../mailbox/store');
+const {
+  normalizeCreatePayload,
+  normalizeMessagePayload,
+  normalizeDelegatePayload,
+  normalizeSubmitPayload,
+} = require('../extensions/sessionHandler');
+
+// Run a session payload normalizer and convert any thrown error into a 400
+// response. Used by both the handler path (so handler errors surface as 400
+// instead of 500) and the fallback path (so missing/clamped fields are
+// rejected at the route boundary, not silently passed through to the store).
+function normalizeOr400(normalize, body) {
+  try { return normalize(body); }
+  catch (e) { throw Object.assign(new Error(e.message), { statusCode: 400 }); }
+}
 
 function buildRoutes(store, proxyHandlers, taskMonitor, extensions) {
   const {
@@ -270,25 +285,17 @@ function buildRoutes(store, proxyHandlers, taskMonitor, extensions) {
 
     // -- Session (Collaboration) --
     'POST /session/create': async ({ body }) => {
-      if (!body.title) throw Object.assign(new Error('title is required'), { statusCode: 400 });
+      const payload = normalizeOr400(normalizeCreatePayload, body);
       if (sessionHandler) {
         const result = sessionHandler.createSession({
-          title: body.title,
-          description: body.description,
-          inviteNodeIds: body.invite_node_ids,
-          maxParticipants: body.max_participants,
+          title: payload.title,
+          description: payload.description,
+          inviteNodeIds: payload.invite_node_ids,
+          maxParticipants: payload.max_participants,
         });
         return { body: result };
       }
-      const result = store.send({
-        type: 'session_create',
-        payload: {
-          title: body.title,
-          description: body.description || '',
-          invite_node_ids: body.invite_node_ids || [],
-          max_participants: body.max_participants || 5,
-        },
-      });
+      const result = store.send({ type: 'session_create', payload });
       return { body: result };
     },
 
@@ -313,77 +320,48 @@ function buildRoutes(store, proxyHandlers, taskMonitor, extensions) {
     },
 
     'POST /session/message': async ({ body }) => {
-      if (!body.session_id) throw Object.assign(new Error('session_id is required'), { statusCode: 400 });
+      const payload = normalizeOr400(normalizeMessagePayload, body);
       if (sessionHandler) {
         const result = sessionHandler.sendMessage({
-          sessionId: body.session_id,
-          toNodeId: body.to_node_id,
-          msgType: body.msg_type,
-          payload: body.payload,
+          sessionId: payload.session_id,
+          toNodeId: payload.to_node_id,
+          msgType: payload.msg_type,
+          payload: payload.payload,
         });
         return { body: result };
       }
-      const result = store.send({
-        type: 'session_message',
-        payload: {
-          session_id: body.session_id,
-          to_node_id: body.to_node_id || null,
-          msg_type: body.msg_type || 'context_update',
-          payload: body.payload || {},
-        },
-      });
+      const result = store.send({ type: 'session_message', payload });
       return { body: result };
     },
 
     'POST /session/delegate': async ({ body }) => {
-      if (!body.session_id) throw Object.assign(new Error('session_id is required'), { statusCode: 400 });
-      if (!body.title) throw Object.assign(new Error('title is required'), { statusCode: 400 });
+      const payload = normalizeOr400(normalizeDelegatePayload, body);
       if (sessionHandler) {
         const result = sessionHandler.delegateSubtask({
-          sessionId: body.session_id,
-          toNodeId: body.to_node_id,
-          title: body.title,
-          description: body.description,
-          role: body.role,
+          sessionId: payload.session_id,
+          toNodeId: payload.to_node_id,
+          title: payload.title,
+          description: payload.description,
+          role: payload.role,
         });
         return { body: result };
       }
-      const result = store.send({
-        type: 'session_delegate',
-        payload: {
-          session_id: body.session_id,
-          to_node_id: body.to_node_id || null,
-          title: body.title,
-          description: body.description || '',
-          role: body.role || 'builder',
-        },
-        priority: 'high',
-      });
+      const result = store.send({ type: 'session_delegate', payload, priority: 'high' });
       return { body: result };
     },
 
     'POST /session/submit': async ({ body }) => {
-      if (!body.session_id) throw Object.assign(new Error('session_id is required'), { statusCode: 400 });
-      if (!body.task_id) throw Object.assign(new Error('task_id is required'), { statusCode: 400 });
+      const payload = normalizeOr400(normalizeSubmitPayload, body);
       if (sessionHandler) {
         const result = sessionHandler.submitResult({
-          sessionId: body.session_id,
-          taskId: body.task_id,
-          resultAssetId: body.result_asset_id,
-          summary: body.summary,
+          sessionId: payload.session_id,
+          taskId: payload.task_id,
+          resultAssetId: payload.result_asset_id,
+          summary: payload.summary,
         });
         return { body: result };
       }
-      const result = store.send({
-        type: 'session_submit',
-        payload: {
-          session_id: body.session_id,
-          task_id: body.task_id,
-          result_asset_id: body.result_asset_id || null,
-          summary: body.summary || '',
-        },
-        priority: 'high',
-      });
+      const result = store.send({ type: 'session_submit', payload, priority: 'high' });
       return { body: result };
     },
 
