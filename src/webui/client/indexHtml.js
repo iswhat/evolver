@@ -16,6 +16,7 @@ const ICONS = {
   refresh: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>',
   sun: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>',
   moon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>',
+  gitpr: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><line x1="6" x2="6" y1="9" y2="21"/></svg>',
 };
 
 // Sidebar items reference an i18n key; the live label is rendered by
@@ -26,6 +27,7 @@ const NAV = [
   { tab: 'assets',       icon: 'package',  labelKey: 'nav.assets' },
   { tab: 'interactions', icon: 'activity', labelKey: 'nav.interactions' },
   { tab: 'personality',  icon: 'brain',    labelKey: 'nav.personality' },
+  { tab: 'pullrequests', icon: 'gitpr',    labelKey: 'nav.pullRequests' },
 ];
 
 function navItem({ tab, icon, labelKey }, idx) {
@@ -208,6 +210,14 @@ function getIndexHtml() {
           <div class="card">
             <h2 data-i18n="personality.card.memoryGraph">Memory Graph (last 100 events)</h2>
             <div id="memory-graph-chart" class="chart-container chart-xl"></div>
+          </div>
+        </section>
+
+        <section data-view="pullrequests" class="view">
+          <div class="card">
+            <h2 data-i18n="pr.card.title">Pull Requests</h2>
+            <p class="muted small card-sub" data-i18n="pr.card.desc">Open pull requests on this repository. Hover any #reference — here or anywhere in the dashboard — for its live GitHub status.</p>
+            <div id="pull-requests" data-i18n="common.loading">Loading...</div>
           </div>
         </section>
       </main>

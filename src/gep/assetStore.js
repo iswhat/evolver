@@ -317,8 +317,9 @@ function ensureGenesSeeded() {
   }
 }
 
-function loadGenes() {
-  ensureGenesSeeded();
+function loadGenes(opts) {
+  const options = opts || {};
+  if (options.seed !== false) ensureGenesSeeded();
   const jsonGenes = readJsonIfExists(genesPath(), getDefaultGenes()).genes || [];
   const jsonlGenes = [];
   try {

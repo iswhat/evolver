@@ -36,6 +36,7 @@ const I18N_DICT = {
   'nav.assets': { en: 'Assets', zh: '资产' },
   'nav.interactions': { en: 'Interactions', zh: '交互' },
   'nav.personality': { en: 'Personality', zh: '人格' },
+  'nav.pullRequests': { en: 'Pull Requests', zh: 'PR' },
 
   // ---- Common ----
   'common.loading': { en: 'Loading...', zh: '加载中...' },
@@ -262,6 +263,19 @@ const I18N_DICT = {
   'personality.cat.mutation': { en: 'Mutation', zh: '变异' },
   'personality.cat.asset': { en: 'Asset', zh: '资产' },
   'personality.cat.run': { en: 'Run', zh: '运行' },
+
+  // ---- Pull Requests (panel + PR hovercard) ----
+  'pr.card.title': { en: 'Pull Requests', zh: 'Pull Requests' },
+  'pr.card.desc': { en: 'Open pull requests on this repository. Hover any #reference — here or anywhere in the dashboard — for its live GitHub status.', zh: '本仓库的开放 PR。悬浮任意 #编号（此处或仪表盘任意位置）即可查看其 GitHub 实时状态。' },
+  'pr.empty': { en: 'No open pull requests (or gh CLI unavailable). Hover a #reference anywhere to fetch its status.', zh: '暂无开放 PR（或 gh CLI 不可用）。悬浮任意位置的 #编号即可拉取其状态。' },
+  'pr.loading': { en: 'Loading PR…', zh: '加载 PR 中…' },
+  'pr.loadFailed': { en: 'Failed to load pull requests: ', zh: '加载 PR 失败：' },
+  'pr.unavailable': { en: 'PR status unavailable', zh: 'PR 状态不可用' },
+  'pr.files': { en: 'files', zh: '文件' },
+  'pr.state.merged': { en: 'Merged', zh: '已合并' },
+  'pr.state.open': { en: 'Open', zh: '开放' },
+  'pr.state.closed': { en: 'Closed', zh: '已关闭' },
+  'pr.state.draft': { en: 'Draft', zh: '草稿' },
 };
 
 // Status / outcome enum tokens — keep raw key as fallback so unknown

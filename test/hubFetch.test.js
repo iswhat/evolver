@@ -128,6 +128,21 @@ describe('hubFetch — unit', () => {
     );
   });
 
+  it('uses dedicated event dispatchers for poll and SSE stream paths', async () => {
+    const { hubFetch } = hubFetchMod;
+    await hubFetch('https://hub.example.com/a2a/events/poll', { method: 'POST' });
+    const pollDispatcher = capturedOptions.dispatcher;
+    await hubFetch('https://hub.example.com/a2a/events/stream?node_id=node_aaaaaaaaaaaa', { method: 'GET' });
+    const streamDispatcher = capturedOptions.dispatcher;
+    await hubFetch('https://hub.example.com/a2a/heartbeat', { method: 'POST' });
+    const strictDispatcher = capturedOptions.dispatcher;
+
+    assert.ok(pollDispatcher instanceof Agent);
+    assert.ok(streamDispatcher instanceof Agent);
+    assert.notStrictEqual(streamDispatcher, pollDispatcher, 'SSE stream should not inherit poll bodyTimeout');
+    assert.notStrictEqual(streamDispatcher, strictDispatcher, 'SSE stream must not use the 30s strict dispatcher');
+  });
+
   it('preserves existing options fields alongside dispatcher', async () => {
     const { hubFetch } = hubFetchMod;
     const signal = AbortSignal.timeout(1000);

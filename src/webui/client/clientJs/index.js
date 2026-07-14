@@ -7,6 +7,7 @@ const { pipelinesJs } = require('./pipelines');
 const { assetsJs } = require('./assets');
 const { interactionsJs } = require('./interactions');
 const { personalityJs } = require('./personality');
+const { githubJs } = require('./github');
 const { bootstrapJs } = require('./bootstrap');
 
 const SECTION_HEADERS = {
@@ -16,6 +17,7 @@ const SECTION_HEADERS = {
   assets: '// ---- Assets ----',
   interactions: '// ---- Interactions (Hub Activity unified timeline + Agent) ----',
   personality: '// ---- Personality ----',
+  github: '// ---- GitHub (PR hovercard + Pull Requests panel) ----',
   bootstrap: '// ---- Tabs ----',
 };
 
@@ -28,6 +30,7 @@ function getClientJs() {
     SECTION_HEADERS.assets, assetsJs,
     SECTION_HEADERS.interactions, interactionsJs,
     SECTION_HEADERS.personality, personalityJs,
+    SECTION_HEADERS.github, githubJs,
     SECTION_HEADERS.bootstrap, bootstrapJs,
   ].join('\n');
 }

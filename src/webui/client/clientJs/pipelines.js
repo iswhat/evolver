@@ -227,7 +227,9 @@ function renderRunDetail(run) {
       ) + '</div>';
     }
     if (detail.initialUserPrompt) {
-      html += '<div class="detail-block"><h4>' + esc(t('pipelines.detail.initialUserPrompt')) + '</h4><pre class="snippet">' + esc(detail.initialUserPrompt) + '</pre></div>';
+      // Linkify PR refs (#123) authors wrote in the prompt — esc() FIRST, then
+      // linkify the escaped text, so we never turn raw input into markup.
+      html += '<div class="detail-block"><h4>' + esc(t('pipelines.detail.initialUserPrompt')) + '</h4><pre class="snippet">' + linkifyPRRefs(esc(detail.initialUserPrompt)) + '</pre></div>';
     }
     html += '</div>';
   }

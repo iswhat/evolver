@@ -203,4 +203,73 @@ describe('WebUiServer', () => {
       'pipelines.card.scoreTrend must be present in both en and zh dicts',
     );
   });
+
+  it('rejects a non-numeric PR number with a 400 (never reaches gh)', async () => {
+    // PR number is untrusted route input; the route regex-guards it to a
+    // positive integer before the observer (which shells `gh`) is called.
+    // A shell-metacharacter payload must bounce with a clean 400.
+    const res = await request(`${baseUrl}/webui/github/pr/3%3B%20ls`);
+    assert.equal(res.status, 400);
+    const body = JSON.parse(res.body);
+    assert.equal(body.error.code, 'INVALID_PR_NUMBER');
+  });
+
+  it('serves a normalized PR-status payload for a numeric PR', async () => {
+    // Hits the real observer. Whether `gh`/network answers or not, the
+    // response must be well-formed JSON carrying the requested number and an
+    // explicit `available` boolean — the hovercard relies on that contract to
+    // pick loading/success/degraded states, and it must never throw.
+    const res = await request(`${baseUrl}/webui/github/pr/319`);
+    assert.equal(res.status, 200);
+    const body = JSON.parse(res.body);
+    assert.equal(body.number, 319);
+    assert.equal(typeof body.available, 'boolean');
+    if (body.available) {
+      assert.ok(['merged', 'open', 'closed', 'draft'].includes(body.state), 'state normalized: ' + body.state);
+      assert.equal(typeof body.additions, 'number');
+      assert.equal(typeof body.changedFiles, 'number');
+    } else {
+      assert.equal(typeof body.reason, 'string');
+    }
+  });
+
+  it('serves repo info and the open-PR list for the Pull Requests panel', async () => {
+    const repo = await request(`${baseUrl}/webui/github/repo`);
+    assert.equal(repo.status, 200);
+    const repoBody = JSON.parse(repo.body);
+    assert.equal(typeof repoBody.available, 'boolean');
+    // When a slug resolves, the client builds hrefs from prUrlBase.
+    if (repoBody.available) assert.match(repoBody.prUrlBase, /^https:\/\/github\.com\/.+\/pull$/);
+
+    const prs = await request(`${baseUrl}/webui/github/prs`);
+    assert.equal(prs.status, 200);
+    const prsBody = JSON.parse(prs.body);
+    assert.ok(Array.isArray(prsBody.data), 'open PRs come back as a data array');
+  });
+
+  it('ships the PR hovercard + linkify machinery in the bundle', async () => {
+    // Pin the client-side capability into /app.js so a future refactor that
+    // drops the hovercard/linkify wiring fails loudly. Also assert the i18n
+    // keys exist in BOTH locales (AGENTS.md invariant) and that linkify is
+    // applied to escaped text (esc() BEFORE linkifyPRRefs), never raw input.
+    const js = await request(`${baseUrl}/app.js`);
+    assert.equal(js.status, 200);
+    assert.match(js.body, /function linkifyPRRefs\(/, 'linkifyPRRefs must ship');
+    assert.match(js.body, /function initGithub\(/, 'initGithub must ship');
+    assert.match(js.body, /initGithub\(\);/, 'initGithub must be invoked at bootstrap');
+    assert.match(js.body, /linkifyPRRefs\(esc\(/, 'linkify must run on escaped text, not raw input');
+    // The PR-ref number class must be [1-9]\d* so '#0' / zero-padded refs are
+    // left as plain text rather than turned into dead /pull/0 chips.
+    assert.match(js.body, /#\(\[1-9\]\\d\*\)/, 'linkify regex must require a nonzero leading digit');
+    assert.match(
+      js.body,
+      /'pr\.state\.merged'\s*:\s*\{\s*en:\s*'Merged',\s*zh:\s*'已合并'\s*\}/,
+      'pr.state.merged must be present in both en and zh dicts',
+    );
+
+    const shell = await request(`${baseUrl}/`);
+    assert.equal(shell.status, 200);
+    assert.match(shell.body, /data-view="pullrequests"/, 'Pull Requests section must ship');
+    assert.match(shell.body, /id="pull-requests"/, 'Pull Requests host element must ship');
+  });
 });

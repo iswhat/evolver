@@ -7,6 +7,7 @@ const TAB_TITLE_KEYS = {
   assets: 'nav.assets',
   interactions: 'nav.interactions',
   personality: 'nav.personality',
+  pullrequests: 'nav.pullRequests',
 };
 
 function activateTab(tab) {
@@ -27,6 +28,7 @@ function activateTab(tab) {
   if (tab === 'assets') loadAsset(state.currentAsset);
   if (tab === 'interactions') loadInteractions();
   if (tab === 'personality') loadPersonality();
+  if (tab === 'pullrequests') loadPullRequests();
 }
 
 async function refresh() {
@@ -35,6 +37,7 @@ async function refresh() {
   if (state.currentTab === 'assets') return loadAsset(state.currentAsset);
   if (state.currentTab === 'interactions') return loadInteractions();
   if (state.currentTab === 'personality') return loadPersonality();
+  if (state.currentTab === 'pullrequests') return loadPullRequests();
 }
 
 function disposeAllCharts() {
@@ -88,5 +91,8 @@ const localeBtn = $('locale-toggle');
 if (localeBtn) localeBtn.addEventListener('click', toggleLocale);
 window.addEventListener('resize', () => Object.values(state.charts).forEach((c) => c.resize && c.resize()));
 window.loadRun = loadRun;
+// GitHub PR hovercards: install the delegated hover listener + prefetch repo
+// info once, so #N references become live cards on every tab.
+initGithub();
 loadOverview();
 `;

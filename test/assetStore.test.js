@@ -199,6 +199,16 @@ describe('loadGenes', () => {
   // @evomap/evolver` ships the repo-root `assets/gep/genes.json` as
   // `genes.seed.json`, and `ensureGenesSeeded()` copies it into the user's
   // store on first run. The fallback only fires when neither file exists.
+  it('can read genes without first-run seeding for dry-run callers', () => {
+    const { genesPath, loadGenes } = freshRequire();
+    assert.equal(fs.existsSync(genesPath()), false, 'precondition: no user genes.json yet');
+
+    const genes = loadGenes({ seed: false });
+
+    assert.ok(Array.isArray(genes));
+    assert.equal(fs.existsSync(genesPath()), false, 'seed:false must not create genes.json');
+  });
+
   it('seed genes.json populates routing_hint reachable via prod ensureGenesSeeded path', () => {
     const { genesPath, loadGenes } = freshRequire();
     // The production path now keeps user-mutable assets in GEP_ASSETS_DIR

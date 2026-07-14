@@ -633,6 +633,67 @@ tr:last-child td { border-bottom: none; }
   border-radius: 10px;
   font-size: 13px;
 }
+
+/* ---- GitHub PR references + hovercard + Pull Requests panel ---- */
+.pr-ref {
+  color: hsl(var(--accent));
+  text-decoration: none;
+  font-weight: 600;
+  white-space: nowrap;
+  border-bottom: 1px dotted hsl(var(--accent) / 0.5);
+}
+.pr-ref:hover { border-bottom-style: solid; }
+
+/* Floating card. Uses the (previously unused) popover surface tokens ported
+   from evox-desktop, so it matches light/dark automatically. */
+.pr-hovercard {
+  position: fixed;
+  z-index: 1000;
+  max-width: 340px;
+  min-width: 220px;
+  padding: 12px 14px;
+  background: hsl(var(--popover));
+  color: hsl(var(--popover-foreground));
+  border: 1px solid hsl(var(--border));
+  border-radius: 12px;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.22);
+  font-size: 13px;
+  line-height: 1.45;
+  pointer-events: auto;
+}
+.pr-card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.pr-card-ref { color: hsl(var(--muted-foreground)); font-weight: 600; text-decoration: none; }
+.pr-card-ref:hover { color: hsl(var(--accent)); }
+.pr-card-time { margin-left: auto; font-size: 12px; }
+.pr-card-title { font-weight: 600; margin: 2px 0 8px 0; word-break: break-word; }
+.pr-card-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: 12px; }
+.pr-card-author { color: hsl(var(--muted-foreground)); }
+.pr-diff { font-variant-numeric: tabular-nums; }
+.pr-add { color: hsl(var(--success)); font-weight: 600; }
+.pr-del { color: hsl(var(--destructive)); font-weight: 600; }
+.pr-files { color: hsl(var(--muted-foreground)); }
+
+/* Status badge — colour keyed to normalized state. */
+.pr-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: none;
+  white-space: nowrap;
+}
+.pr-badge.merged  { background: hsl(271 60% 55% / 0.16); color: hsl(271 60% 60%); }
+.pr-badge.open    { background: hsl(var(--success) / 0.16);     color: hsl(var(--success)); }
+.pr-badge.closed  { background: hsl(var(--destructive) / 0.16); color: hsl(var(--destructive)); }
+.pr-badge.draft   { background: hsl(var(--muted-foreground) / 0.16); color: hsl(var(--muted-foreground)); }
+.pr-badge.unknown,
+.pr-badge.loading { background: hsl(var(--muted-foreground) / 0.14); color: hsl(var(--muted-foreground)); }
+
+.pr-list { list-style: none; margin: 4px 0 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.pr-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 10px; border: 1px solid hsl(var(--border) / 0.5); border-radius: 10px; }
+.pr-row-title { flex: 1 1 auto; min-width: 0; word-break: break-word; }
 `;
 }
 

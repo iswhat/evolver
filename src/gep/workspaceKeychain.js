@@ -1,1 +1,174 @@
-function _0x783e(_0x122543,_0x465b2f){_0x122543=_0x122543-(-0x1bef+-0xf*0xc7+0x2902);const _0x13698b=_0xfd0b();let _0x199981=_0x13698b[_0x122543];if(_0x783e['\x75\x77\x4b\x4e\x4d\x42']===undefined){var _0x75427c=function(_0x469d6f){const _0x532efe='\x61\x62\x63\x64\x65\x66\x67\x68\x69\x6a\x6b\x6c\x6d\x6e\x6f\x70\x71\x72\x73\x74\x75\x76\x77\x78\x79\x7a\x41\x42\x43\x44\x45\x46\x47\x48\x49\x4a\x4b\x4c\x4d\x4e\x4f\x50\x51\x52\x53\x54\x55\x56\x57\x58\x59\x5a\x30\x31\x32\x33\x34\x35\x36\x37\x38\x39\x2b\x2f\x3d';let _0x93fdd0='',_0x3ede44='',_0x4f3294=_0x93fdd0+_0x75427c,_0x5c3841=(''+function(){return-0x20ea+-0xa7*-0x1+0x2043;})['\x69\x6e\x64\x65\x78\x4f\x66']('\x0a')!==-(0x1107+-0x1422+0x31c*0x1);for(let _0x406631=-0x96e*-0x1+-0x252+0x1c7*-0x4,_0x3db586,_0x438a17,_0xaacfe9=0x5*-0x169+0x4*-0x4e1+0x1a91;_0x438a17=_0x469d6f['\x63\x68\x61\x72\x41\x74'](_0xaacfe9++);~_0x438a17&&(_0x3db586=_0x406631%(0x6b*0x26+0x1072+-0x2f*0xb0)?_0x3db586*(-0xd82+-0x2686+-0x778*-0x7)+_0x438a17:_0x438a17,_0x406631++%(-0x2018+0x2*0x1181+0x173*-0x2))?_0x93fdd0+=_0x5c3841||_0x4f3294['\x63\x68\x61\x72\x43\x6f\x64\x65\x41\x74'](_0xaacfe9+(-0x3*-0x5ea+-0x58f+-0xc25))-(-0x1ae+0x1ae2+-0x192a)!==-0x11af+-0x73f*-0x5+-0x128c?String['\x66\x72\x6f\x6d\x43\x68\x61\x72\x43\x6f\x64\x65'](-0x20bf*0x1+0x1*-0x1371+0x352f&_0x3db586>>(-(0x331+-0x14*-0x182+-0x2157)*_0x406631&0x169f*-0x1+0x1*0x3d9+-0x644*-0x3)):_0x406631:0x25f*-0x4+-0xe41+-0x3b*-0x67){_0x438a17=_0x532efe['\x69\x6e\x64\x65\x78\x4f\x66'](_0x438a17);}for(let _0x3da169=0x727*-0x1+0x1*-0x73+-0x7*-0x116,_0x442253=_0x93fdd0['\x6c\x65\x6e\x67\x74\x68'];_0x3da169<_0x442253;_0x3da169++){_0x3ede44+='\x25'+('\x30\x30'+_0x93fdd0['\x63\x68\x61\x72\x43\x6f\x64\x65\x41\x74'](_0x3da169)['\x74\x6f\x53\x74\x72\x69\x6e\x67'](0x1*-0x605+-0x23*0x63+0x139e))['\x73\x6c\x69\x63\x65'](-(-0x2*-0xdbc+-0x239*0x3+-0x14cb));}return decodeURIComponent(_0x3ede44);};const _0x4d475e=function(_0x274b08,_0xa09abf){let _0x3bb986=[],_0x1bb681=-0x1429+0x6b8+0xd71,_0x2ef6cd,_0x523136='';_0x274b08=_0x75427c(_0x274b08);let _0x558797;for(_0x558797=-0x1d27+-0x2057+0x3d7e;_0x558797<-0x14f+0xf6+0x159;_0x558797++){_0x3bb986[_0x558797]=_0x558797;}for(_0x558797=-0x6a7+0x101*-0x14+0x8e9*0x3;_0x558797<0x25b8+-0x53*0x4d+0x33*-0x3b;_0x558797++){_0x1bb681=(_0x1bb681+_0x3bb986[_0x558797]+_0xa09abf['\x63\x68\x61\x72\x43\x6f\x64\x65\x41\x74'](_0x558797%_0xa09abf['\x6c\x65\x6e\x67\x74\x68']))%(-0x1121+0x1d88+-0xb67),_0x2ef6cd=_0x3bb986[_0x558797],_0x3bb986[_0x558797]=_0x3bb986[_0x1bb681],_0x3bb986[_0x1bb681]=_0x2ef6cd;}_0x558797=0xa5d+-0x1a05*-0x1+-0x2462,_0x1bb681=-0x24c1+0x22fc+0x1*0x1c5;for(let _0x451444=-0x157*0x5+0x2*-0x13f+0x931;_0x451444<_0x274b08['\x6c\x65\x6e\x67\x74\x68'];_0x451444++){_0x558797=(_0x558797+(0x151*0x17+-0x704*0x4+0x2*-0x11b))%(-0x2*-0xfb0+-0x5a2*0x2+-0x98e*0x2),_0x1bb681=(_0x1bb681+_0x3bb986[_0x558797])%(-0x2025+-0x1c2b+-0x30*-0x147),_0x2ef6cd=_0x3bb986[_0x558797],_0x3bb986[_0x558797]=_0x3bb986[_0x1bb681],_0x3bb986[_0x1bb681]=_0x2ef6cd,_0x523136+=String['\x66\x72\x6f\x6d\x43\x68\x61\x72\x43\x6f\x64\x65'](_0x274b08['\x63\x68\x61\x72\x43\x6f\x64\x65\x41\x74'](_0x451444)^_0x3bb986[(_0x3bb986[_0x558797]+_0x3bb986[_0x1bb681])%(-0x1e2b+-0x25*-0xf6+-0x463)]);}return _0x523136;};_0x783e['\x77\x75\x6b\x6b\x58\x55']=_0x4d475e,_0x783e['\x42\x75\x53\x63\x6b\x6d']={},_0x783e['\x75\x77\x4b\x4e\x4d\x42']=!![];}const _0x35d997=_0x13698b[-0x3*-0x41b+0x1f71+-0x2bc2],_0x40395d=_0x122543+_0x35d997,_0x1d18d9=_0x783e['\x42\x75\x53\x63\x6b\x6d'][_0x40395d];if(!_0x1d18d9){if(_0x783e['\x74\x6e\x64\x53\x79\x55']===undefined){const _0x278690=function(_0x5880f8){this['\x7a\x79\x4d\x43\x69\x77']=_0x5880f8,this['\x61\x75\x43\x7a\x4c\x75']=[0x1*0xced+-0x23b*-0xb+-0x2575,0x237d+-0x1136+0x1*-0x1247,-0x5*-0xd7+0x8*-0x3cb+-0x8b7*-0x3],this['\x55\x42\x58\x51\x64\x49']=function(){return'\x6e\x65\x77\x53\x74\x61\x74\x65';},this['\x64\x4e\x6b\x41\x46\x47']='\x5c\x77\x2b\x20\x2a\x5c\x28\x5c\x29\x20\x2a\x7b\x5c\x77\x2b\x20\x2a',this['\x51\x4a\x59\x51\x6a\x76']='\x5b\x27\x7c\x22\x5d\x2e\x2b\x5b\x27\x7c\x22\x5d\x3b\x3f\x20\x2a\x7d';};_0x278690['\x70\x72\x6f\x74\x6f\x74\x79\x70\x65']['\x55\x6e\x65\x42\x59\x66']=function(){const _0x41ba37=new RegExp(this['\x64\x4e\x6b\x41\x46\x47']+this['\x51\x4a\x59\x51\x6a\x76']),_0x3476cf=_0x41ba37['\x74\x65\x73\x74'](this['\x55\x42\x58\x51\x64\x49']['\x74\x6f\x53\x74\x72\x69\x6e\x67']())?--this['\x61\x75\x43\x7a\x4c\x75'][-0x155a+0x235f+-0xe04]:--this['\x61\x75\x43\x7a\x4c\x75'][-0xd6*-0x1f+-0x48+-0x19a2];return this['\x4d\x66\x61\x68\x48\x51'](_0x3476cf);},_0x278690['\x70\x72\x6f\x74\x6f\x74\x79\x70\x65']['\x4d\x66\x61\x68\x48\x51']=function(_0x5397d2){if(!Boolean(~_0x5397d2))return _0x5397d2;return this['\x41\x73\x57\x56\x77\x53'](this['\x7a\x79\x4d\x43\x69\x77']);},_0x278690['\x70\x72\x6f\x74\x6f\x74\x79\x70\x65']['\x41\x73\x57\x56\x77\x53']=function(_0x38925e){for(let _0x157b38=0x75b*0x3+-0x5*-0x5e+-0x1*0x17e7,_0x5ab48d=this['\x61\x75\x43\x7a\x4c\x75']['\x6c\x65\x6e\x67\x74\x68'];_0x157b38<_0x5ab48d;_0x157b38++){this['\x61\x75\x43\x7a\x4c\x75']['\x70\x75\x73\x68'](Math['\x72\x6f\x75\x6e\x64'](Math['\x72\x61\x6e\x64\x6f\x6d']())),_0x5ab48d=this['\x61\x75\x43\x7a\x4c\x75']['\x6c\x65\x6e\x67\x74\x68'];}return _0x38925e(this['\x61\x75\x43\x7a\x4c\x75'][-0xe*0x121+0x478+-0x5ab*-0x2]);},(''+function(){return-0x20fa+-0xe9*0xd+0x2ccf*0x1;})['\x69\x6e\x64\x65\x78\x4f\x66']('\x0a')===-(0x119a+-0x122d+0x94)&&new _0x278690(_0x783e)['\x55\x6e\x65\x42\x59\x66'](),_0x783e['\x74\x6e\x64\x53\x79\x55']=!![];}_0x199981=_0x783e['\x77\x75\x6b\x6b\x58\x55'](_0x199981,_0x465b2f),_0x783e['\x42\x75\x53\x63\x6b\x6d'][_0x40395d]=_0x199981;}else _0x199981=_0x1d18d9;return _0x199981;}const _0x31a4a1=_0x783e;(function(_0x217382,_0x23aaf7){const _0x235716=_0x783e,_0x2cf098=_0x217382();while(!![]){try{const _0x28fd29=parseInt(_0x235716(0x1d5,'\x6c\x30\x50\x36'))/(0x19*-0x68+-0xf3d+0x2*0xcb3)+parseInt(_0x235716(0x1de,'\x5e\x23\x5a\x4c'))/(-0x1*0x1d7d+0x2*-0x9ef+-0x315d*-0x1)+parseInt(_0x235716(0x1da,'\x63\x57\x24\x6b'))/(0x1781*-0x1+0x148c+0x4c*0xa)*(parseInt(_0x235716(0x1e3,'\x4e\x29\x5b\x70'))/(-0x2*0x4b3+-0x1*0x86f+0x11d9))+parseInt(_0x235716(0x18d,'\x62\x38\x6f\x25'))/(-0x1*0x26+-0xd0e+0xd39)+parseInt(_0x235716(0x189,'\x57\x73\x5b\x74'))/(0x10e0+0x22f*0xb+-0x28df)+parseInt(_0x235716(0x16e,'\x53\x6e\x6f\x69'))/(-0xd*-0x1f5+0x53*0x3e+-0x2d84)*(-parseInt(_0x235716(0x1c2,'\x2a\x70\x46\x44'))/(0x43f*-0x9+-0x303*0x1+-0x2942*-0x1))+-parseInt(_0x235716(0x16d,'\x33\x79\x32\x48'))/(0x4*-0x509+-0x2e3+0x1710)*(parseInt(_0x235716(0x190,'\x38\x33\x43\x78'))/(-0xc5*0x3+-0x3*-0x223+-0xd0*0x5));if(_0x28fd29===_0x23aaf7)break;else _0x2cf098['push'](_0x2cf098['shift']());}catch(_0x50c744){_0x2cf098['push'](_0x2cf098['shift']());}}}(_0xfd0b,-0x1*0x83841+-0x2*-0x37618+0x1*0xc70f5));function _0xfd0b(){const _0x1f7273=['\x57\x4f\x47\x4e\x46\x6d\x6b\x53\x69\x65\x68\x63\x4f\x33\x64\x63\x50\x75\x34\x77\x57\x4f\x74\x63\x54\x57','\x6c\x4c\x33\x63\x50\x63\x68\x63\x49\x38\x6f\x55\x57\x37\x76\x35','\x6f\x38\x6b\x47\x77\x5a\x43\x6e\x65\x6d\x6f\x55\x57\x34\x4f','\x64\x57\x74\x63\x4a\x38\x6b\x51\x57\x52\x34\x45\x57\x34\x6e\x44\x46\x38\x6f\x68','\x6a\x38\x6f\x75\x57\x52\x53\x42\x57\x51\x57','\x63\x43\x6f\x33\x57\x4f\x33\x64\x55\x53\x6b\x4b','\x57\x50\x4a\x63\x4a\x57\x74\x64\x53\x61\x68\x64\x47\x53\x6b\x32','\x75\x58\x54\x59\x57\x37\x6a\x73','\x57\x51\x2f\x63\x4d\x64\x78\x64\x53\x61\x4f','\x57\x36\x72\x54\x57\x36\x61\x59\x57\x37\x57\x79\x57\x36\x39\x4e\x73\x6d\x6f\x72\x57\x4f\x6d','\x57\x4f\x46\x63\x53\x43\x6f\x43\x57\x35\x35\x76\x57\x4f\x70\x63\x50\x6d\x6b\x6f','\x57\x51\x65\x2f\x57\x51\x6a\x32','\x57\x35\x30\x46\x74\x74\x47\x70\x57\x50\x4c\x4e\x70\x53\x6f\x68\x61\x66\x43\x53\x74\x47','\x57\x50\x6a\x68\x6c\x72\x43\x4f\x79\x76\x5a\x63\x54\x61','\x57\x34\x31\x31\x6b\x6d\x6f\x4e\x45\x48\x38','\x57\x50\x46\x63\x50\x53\x6f\x62\x57\x37\x50\x72\x57\x51\x74\x63\x55\x6d\x6b\x59','\x66\x68\x38\x4d\x64\x43\x6f\x42\x57\x36\x52\x64\x52\x53\x6b\x42','\x78\x76\x74\x63\x4a\x32\x4b\x56\x6e\x67\x6c\x64\x49\x47','\x46\x68\x75\x35\x57\x35\x48\x54','\x6c\x53\x6f\x6f\x57\x37\x4e\x63\x53\x47\x31\x42\x57\x37\x42\x63\x4b\x61','\x57\x34\x46\x64\x4e\x77\x75\x41\x6a\x47','\x74\x4d\x68\x64\x4e\x38\x6b\x65','\x6a\x62\x68\x63\x53\x61','\x57\x51\x46\x64\x4c\x71\x5a\x63\x47\x65\x75\x6d\x57\x52\x7a\x75','\x57\x4f\x50\x68\x68\x57\x43\x42\x42\x66\x42\x63\x56\x61','\x73\x33\x56\x64\x50\x43\x6b\x64\x57\x52\x61','\x57\x34\x2f\x63\x4b\x30\x78\x64\x4e\x47\x43\x69\x57\x36\x38\x6f','\x57\x4f\x6a\x34\x57\x4f\x4a\x63\x54\x47','\x57\x34\x64\x63\x48\x65\x4e\x64\x55\x64\x47','\x69\x43\x6f\x45\x57\x34\x70\x63\x47\x53\x6b\x51\x57\x4f\x47','\x57\x37\x38\x44\x57\x35\x74\x64\x4e\x53\x6b\x61','\x57\x35\x39\x67\x41\x49\x30\x46\x67\x71','\x57\x37\x7a\x68\x6b\x53\x6f\x52\x57\x4f\x57','\x57\x36\x61\x73\x57\x50\x30\x41\x57\x51\x58\x51\x62\x47','\x57\x35\x78\x63\x4e\x47\x54\x76\x7a\x64\x33\x63\x4f\x75\x71','\x6f\x75\x74\x63\x51\x74\x37\x63\x47\x53\x6f\x39\x57\x52\x4c\x49','\x57\x36\x34\x66\x57\x4f\x47\x41\x57\x50\x71','\x76\x67\x74\x63\x4b\x43\x6b\x76\x57\x4f\x35\x30\x67\x53\x6b\x6a\x70\x73\x44\x70\x71\x57','\x77\x6d\x6b\x54\x61\x77\x61\x57\x6e\x72\x6a\x45','\x57\x35\x44\x30\x57\x4f\x46\x63\x53\x43\x6f\x4d','\x61\x77\x6c\x63\x47\x53\x6f\x7a\x57\x51\x38','\x43\x57\x31\x32\x57\x36\x39\x7a\x44\x38\x6b\x39','\x57\x51\x78\x63\x55\x53\x6f\x43\x57\x37\x58\x6e','\x57\x50\x75\x30\x57\x52\x62\x59\x57\x51\x58\x57\x57\x37\x50\x6e','\x57\x4f\x65\x61\x57\x52\x54\x59\x57\x50\x65','\x62\x64\x4a\x63\x47\x38\x6f\x72\x57\x51\x6c\x64\x56\x65\x70\x63\x53\x75\x57\x2f','\x78\x74\x62\x46\x57\x34\x6e\x4a\x71\x53\x6b\x68\x57\x52\x4f','\x57\x52\x5a\x63\x55\x4a\x42\x64\x4a\x47\x65','\x57\x34\x71\x30\x57\x35\x64\x64\x4f\x43\x6b\x74\x63\x31\x4b','\x57\x36\x57\x33\x57\x34\x2f\x64\x49\x53\x6b\x71','\x57\x34\x47\x64\x57\x50\x4f\x57\x57\x50\x43','\x57\x52\x6d\x56\x57\x52\x39\x48\x57\x52\x65\x30\x57\x36\x44\x71','\x70\x78\x6c\x63\x52\x33\x57\x55\x41\x43\x6b\x71\x57\x4f\x57','\x57\x50\x34\x78\x77\x5a\x79\x69\x65\x38\x6b\x42\x74\x47','\x57\x35\x74\x64\x50\x31\x65\x37\x69\x58\x50\x33\x43\x61','\x46\x77\x6d\x79\x57\x36\x58\x2f','\x62\x75\x4f\x2f','\x57\x37\x6e\x6b\x45\x62\x65\x74\x6e\x6d\x6b\x42\x77\x57','\x61\x78\x38\x5a\x6f\x43\x6f\x38\x57\x36\x56\x64\x53\x53\x6b\x62','\x44\x53\x6f\x6b\x57\x37\x68\x63\x51\x74\x30','\x57\x51\x6e\x57\x69\x67\x62\x75','\x57\x52\x5a\x64\x4a\x47\x6e\x45\x77\x47','\x67\x31\x56\x64\x4d\x47','\x57\x35\x6a\x64\x57\x52\x42\x63\x4c\x53\x6f\x55\x57\x36\x31\x6e\x6f\x57','\x43\x59\x2f\x64\x51\x74\x66\x58\x6b\x43\x6f\x75\x57\x34\x53','\x57\x51\x43\x47\x6b\x43\x6f\x75\x69\x47','\x57\x37\x68\x63\x53\x53\x6f\x68\x57\x34\x34','\x73\x72\x74\x63\x56\x62\x56\x63\x56\x47','\x43\x64\x58\x75\x57\x35\x4c\x48','\x57\x35\x72\x64\x63\x38\x6f\x49\x75\x57','\x68\x75\x56\x63\x4f\x68\x38\x49','\x67\x75\x4b\x71\x6b\x53\x6f\x57','\x57\x34\x5a\x64\x4c\x58\x4c\x56\x76\x38\x6f\x74\x7a\x53\x6f\x6a\x57\x50\x2f\x64\x47\x6d\x6b\x34\x57\x52\x79','\x43\x53\x6b\x48\x72\x38\x6f\x78\x57\x36\x70\x63\x4e\x57','\x57\x52\x68\x64\x4e\x38\x6b\x68\x57\x50\x52\x64\x4c\x71','\x79\x53\x6b\x70\x6e\x66\x4b\x6f','\x57\x34\x76\x41\x57\x50\x33\x63\x4d\x6d\x6f\x6b','\x57\x35\x6c\x64\x48\x68\x4e\x63\x54\x4b\x70\x63\x4d\x6d\x6b\x6a\x62\x43\x6b\x64\x61\x4b\x37\x63\x4e\x47','\x57\x50\x2f\x63\x4c\x4c\x47\x5a\x68\x71','\x7a\x53\x6f\x61\x57\x36\x4a\x63\x48\x48\x62\x77\x57\x37\x30','\x62\x33\x6a\x36\x57\x34\x76\x54\x57\x35\x75\x48','\x57\x34\x78\x64\x53\x43\x6b\x77\x6d\x53\x6f\x32\x57\x34\x76\x67\x46\x57\x46\x64\x52\x6d\x6b\x2f\x67\x6d\x6b\x50','\x57\x50\x6c\x63\x4b\x72\x4a\x64\x51\x38\x6b\x58\x69\x33\x6c\x63\x4f\x74\x5a\x63\x4a\x63\x56\x63\x50\x6d\x6b\x46','\x57\x50\x52\x63\x49\x43\x6f\x36\x73\x43\x6b\x77','\x57\x51\x65\x31\x57\x4f\x6a\x32\x57\x52\x43\x30\x57\x36\x7a\x7a','\x57\x50\x37\x64\x4e\x49\x4c\x64\x72\x38\x6b\x33\x57\x34\x54\x7a','\x62\x31\x71\x56\x57\x34\x72\x6e\x70\x65\x30','\x78\x4b\x57\x53\x57\x34\x7a\x67\x62\x78\x4a\x64\x4b\x61','\x6b\x48\x78\x63\x54\x43\x6b\x55\x57\x50\x52\x64\x50\x77\x4c\x72','\x77\x57\x50\x53\x57\x51\x61\x4f\x57\x50\x50\x30\x61\x38\x6f\x33\x57\x36\x4c\x54\x69\x58\x69','\x74\x4d\x6d\x65\x57\x34\x72\x70','\x7a\x6d\x6b\x57\x57\x51\x4b\x4b\x6d\x71','\x57\x52\x74\x63\x4b\x43\x6f\x42\x57\x35\x58\x4d','\x57\x52\x76\x42\x69\x53\x6b\x65\x63\x38\x6b\x62\x57\x35\x7a\x78','\x73\x77\x68\x64\x47\x61','\x63\x32\x74\x63\x4f\x6d\x6f\x64\x57\x4f\x68\x63\x53\x43\x6f\x38\x41\x47','\x57\x4f\x68\x63\x50\x38\x6f\x6e','\x78\x77\x68\x63\x4d\x6d\x6b\x72\x57\x4f\x43\x65\x6d\x6d\x6b\x69\x66\x74\x39\x56','\x71\x49\x50\x4d\x41\x53\x6b\x70\x57\x51\x2f\x63\x51\x43\x6b\x65\x57\x36\x71\x51\x69\x6d\x6b\x76\x57\x4f\x79','\x6f\x30\x37\x63\x54\x4a\x57','\x61\x53\x6f\x6a\x41\x38\x6f\x55\x6c\x61','\x42\x4a\x74\x63\x50\x57\x56\x63\x4e\x71','\x57\x35\x46\x64\x54\x33\x74\x63\x4a\x53\x6f\x35','\x57\x51\x56\x64\x50\x62\x4b\x4a\x57\x52\x30','\x6d\x74\x64\x63\x47\x43\x6b\x6c\x57\x4f\x61','\x57\x36\x6d\x49\x57\x51\x57\x52\x57\x4f\x43','\x78\x43\x6b\x41\x6d\x65\x43\x34','\x45\x4e\x6a\x53\x57\x35\x58\x5a','\x57\x35\x4f\x30\x57\x35\x46\x64\x47\x53\x6b\x74\x68\x30\x2f\x63\x55\x47','\x73\x32\x35\x58\x57\x34\x6d','\x6a\x6d\x6f\x43\x57\x52\x33\x64\x48\x38\x6b\x74','\x6e\x6d\x6f\x4d\x44\x43\x6f\x79\x6c\x57','\x70\x43\x6b\x64\x71\x48\x61\x74','\x57\x50\x56\x64\x47\x38\x6f\x6e\x72\x48\x58\x64\x57\x4f\x48\x58','\x57\x34\x31\x6d\x6c\x53\x6f\x71','\x57\x36\x54\x7a\x64\x38\x6f\x42\x57\x51\x69','\x57\x34\x42\x64\x53\x38\x6b\x73\x6e\x43\x6f\x38\x57\x34\x71\x41\x74\x71\x70\x64\x4c\x43\x6b\x4e\x66\x57','\x57\x34\x6c\x64\x4c\x31\x4e\x63\x53\x57','\x57\x51\x52\x63\x47\x75\x4f\x5a\x69\x57','\x69\x43\x6f\x69\x57\x52\x52\x64\x56\x53\x6b\x48','\x6d\x53\x6f\x34\x57\x51\x75\x58\x57\x52\x65\x4f','\x46\x73\x4b\x44','\x7a\x73\x61\x77\x57\x35\x78\x63\x49\x57','\x63\x38\x6f\x70\x57\x52\x65\x70\x57\x51\x4f','\x6d\x63\x70\x64\x53\x68\x56\x64\x56\x57','\x57\x50\x48\x4a\x57\x50\x74\x63\x4f\x38\x6f\x67\x78\x61\x5a\x63\x50\x31\x79\x6e\x57\x37\x75\x55\x6f\x47','\x6b\x77\x70\x63\x49\x74\x37\x63\x47\x71','\x57\x36\x4f\x7a\x57\x50\x4f','\x45\x71\x37\x63\x4b\x63\x52\x63\x4d\x68\x61\x65\x6b\x71'];_0xfd0b=function(){return _0x1f7273;};return _0xfd0b();}const _0x1ce296=(function(){const _0x5e86fa=_0x783e,_0x5be062={};_0x5be062['\x6e\x64\x44\x4a\x70']=function(_0x59e5ae,_0x5a7937){return _0x59e5ae===_0x5a7937;},_0x5be062[_0x5e86fa(0x175,'\x50\x56\x40\x67')]=_0x5e86fa(0x17f,'\x26\x37\x34\x62'),_0x5be062['\x66\x48\x4c\x76\x66']=function(_0x7812ba,_0x25af40){return _0x7812ba!==_0x25af40;},_0x5be062[_0x5e86fa(0x188,'\x4e\x43\x4a\x52')]=_0x5e86fa(0x1d3,'\x47\x75\x6b\x67'),_0x5be062[_0x5e86fa(0x1ab,'\x57\x73\x5b\x74')]=_0x5e86fa(0x1aa,'\x28\x33\x5e\x23');const _0x1d2f61=_0x5be062;let _0x2e2b0e=!![];return function(_0x54bcd8,_0x16e630){const _0x52f79b=_0x5e86fa,_0x1ef9ba={'\x4a\x43\x66\x57\x75':function(_0x3234c7,_0x158e01){const _0x37eab5=_0x783e;return _0x1d2f61[_0x37eab5(0x17a,'\x61\x6f\x43\x4e')](_0x3234c7,_0x158e01);},'\x45\x66\x6c\x58\x62':_0x1d2f61[_0x52f79b(0x1bc,'\x63\x57\x24\x6b')],'\x43\x4f\x74\x77\x47':_0x52f79b(0x1a4,'\x7a\x71\x7a\x41')+_0x52f79b(0x1a8,'\x57\x73\x5b\x74')},_0x1446ca=_0x2e2b0e?function(){const _0x4e3776=_0x52f79b;if(_0x1d2f61['\x6e\x64\x44\x4a\x70'](_0x4e3776(0x182,'\x6c\x30\x50\x36'),_0x1d2f61[_0x4e3776(0x1d1,'\x45\x53\x30\x43')])){const _0xe1cdc2=new _0x26f60e['\x45\x6e\x74\x72\x79'](_0x2f2379,_0x3eb977),_0xc42ec4=_0xe1cdc2[_0x4e3776(0x197,'\x32\x33\x31\x57')+_0x4e3776(0x18b,'\x50\x56\x40\x67')]();if(_0x1ef9ba[_0x4e3776(0x187,'\x45\x57\x44\x4c')](typeof _0xc42ec4,_0x1ef9ba[_0x4e3776(0x1be,'\x57\x73\x5b\x74')])&&_0x5bd1ac[_0x4e3776(0x16f,'\x57\x47\x23\x55')](_0xc42ec4['\x74\x72\x69\x6d']()))return{'\x61\x76\x61\x69\x6c\x61\x62\x6c\x65':!![],'\x69\x64':_0xc42ec4[_0x4e3776(0x17e,'\x26\x37\x34\x62')]()};const _0x1892cf={};return _0x1892cf[_0x4e3776(0x1c3,'\x30\x46\x55\x6f')+'\x65']=!![],_0x1892cf['\x69\x64']=null,_0x1892cf;}else{if(_0x16e630){if(_0x1d2f61[_0x4e3776(0x18a,'\x57\x47\x23\x55')](_0x1d2f61[_0x4e3776(0x174,'\x29\x4b\x41\x35')],_0x4e3776(0x1b9,'\x51\x44\x71\x64'))){const _0x275e5f=_0x16e630[_0x4e3776(0x1db,'\x6c\x30\x50\x36')](_0x54bcd8,arguments);return _0x16e630=null,_0x275e5f;}else return _0x8ecb1a[_0x4e3776(0x1e1,'\x51\x44\x71\x64')]()['\x73\x65\x61\x72\x63\x68'](_0x1ef9ba[_0x4e3776(0x192,'\x61\x6f\x43\x4e')])[_0x4e3776(0x1b3,'\x77\x77\x21\x4a')]()['\x63\x6f\x6e\x73\x74\x72\x75\x63'+_0x4e3776(0x16a,'\x32\x75\x4b\x4b')](_0x5e6182)[_0x4e3776(0x1d6,'\x33\x52\x62\x4f')](_0x1ef9ba[_0x4e3776(0x19f,'\x4e\x29\x5b\x70')]);}}}:function(){};return _0x2e2b0e=![],_0x1446ca;};}()),_0x5f5101=_0x1ce296(this,function(){const _0x245f9b=_0x783e,_0x49eea0={};_0x49eea0[_0x245f9b(0x171,'\x68\x43\x70\x38')]=_0x245f9b(0x1cd,'\x68\x6c\x21\x46')+_0x245f9b(0x1cf,'\x26\x29\x4c\x55');const _0x607ab2=_0x49eea0;return _0x5f5101[_0x245f9b(0x1cc,'\x4a\x72\x24\x2a')]()[_0x245f9b(0x1ac,'\x2a\x70\x46\x44')](_0x245f9b(0x1cd,'\x68\x6c\x21\x46')+'\x2b\x29\x2b\x24')[_0x245f9b(0x1a5,'\x5d\x28\x53\x43')]()[_0x245f9b(0x18c,'\x68\x43\x70\x38')+'\x74\x6f\x72'](_0x5f5101)[_0x245f9b(0x19b,'\x62\x38\x6f\x25')](_0x607ab2[_0x245f9b(0x172,'\x62\x50\x74\x6e')]);});_0x5f5101();const _0x9d6263=_0x31a4a1(0x1af,'\x25\x31\x46\x64')+_0x31a4a1(0x1b0,'\x57\x47\x23\x55')+'\x6f\x72\x6b\x73\x70\x61\x63\x65'+_0x31a4a1(0x1cb,'\x38\x33\x43\x78'),_0x2b4b28=/^[a-f0-9]{32,}$/i;let _0x19182c=undefined;function _0x33d1a8(){const _0x9530fe=_0x31a4a1,_0x43917a={'\x4d\x68\x64\x42\x5a':function(_0x4784ca,_0x559d83){return _0x4784ca!==_0x559d83;},'\x43\x4d\x58\x43\x6a':function(_0x113b4b,_0x3c851d){return _0x113b4b(_0x3c851d);},'\x77\x57\x77\x7a\x69':function(_0x2c2df0,_0x1771ca){return _0x2c2df0===_0x1771ca;},'\x71\x59\x49\x6b\x65':_0x9530fe(0x1c1,'\x68\x6c\x21\x46')};if(_0x43917a[_0x9530fe(0x1bf,'\x50\x56\x40\x67')](_0x19182c,undefined))return _0x19182c;try{const _0x4950d6=_0x43917a['\x43\x4d\x58\x43\x6a'](require,_0x9530fe(0x1a7,'\x7a\x71\x7a\x41')+'\x2f\x6b\x65\x79\x72\x69\x6e\x67');if(_0x4950d6&&_0x43917a[_0x9530fe(0x173,'\x47\x26\x72\x2a')](typeof _0x4950d6['\x45\x6e\x74\x72\x79'],_0x43917a[_0x9530fe(0x1e7,'\x4e\x29\x5b\x70')]))return _0x19182c=_0x4950d6,_0x19182c;return _0x19182c=null,null;}catch{return _0x19182c=null,null;}}function _0x5df2cc(){const _0x226981=_0x31a4a1,_0x5f1c20={'\x53\x75\x42\x42\x52':function(_0x820b65,_0x4cafe2){return _0x820b65(_0x4cafe2);},'\x77\x6f\x6d\x62\x42':_0x226981(0x181,'\x62\x50\x74\x6e'),'\x6b\x70\x43\x73\x42':function(_0xb58a02,_0x1855a4){return _0xb58a02===_0x1855a4;},'\x48\x58\x58\x61\x62':_0x226981(0x1e8,'\x74\x71\x42\x77'),'\x42\x59\x55\x43\x55':function(_0x52af3a,_0x5adee8){return _0x52af3a===_0x5adee8;}},_0x41db28=_0x5f1c20[_0x226981(0x1d0,'\x68\x43\x70\x38')](String,process.env.EVOLVER_WORKSPACE_KEYCHAIN||_0x5f1c20[_0x226981(0x186,'\x74\x32\x74\x72')])[_0x226981(0x18f,'\x49\x2a\x32\x63')+_0x226981(0x16c,'\x32\x33\x31\x57')]()['\x74\x72\x69\x6d']();if(_0x5f1c20[_0x226981(0x183,'\x61\x6f\x43\x4e')](_0x41db28,_0x5f1c20[_0x226981(0x1c9,'\x72\x72\x4c\x5d')])||_0x5f1c20[_0x226981(0x1b5,'\x4a\x5d\x41\x4e')](_0x41db28,_0x226981(0x185,'\x74\x32\x74\x72'))||_0x5f1c20[_0x226981(0x1c4,'\x4e\x29\x5b\x70')](_0x41db28,_0x5f1c20['\x77\x6f\x6d\x62\x42']))return _0x41db28;return _0x5f1c20[_0x226981(0x1c8,'\x4c\x42\x6c\x4d')];}const _0x2d8301=[/no\s+matching\s+entry/i,/could\s+not\s+be\s+found/i,/element\s+not\s+found/i,/\bnoentry\b/i,/\bno\s*entry\b/i,/not\s+found\s+in\s+(?:secure|keychain)/i];function _0x53cf5a(_0x213f04){const _0x154506=_0x31a4a1,_0x25e5bb=_0x213f04&&_0x213f04[_0x154506(0x1bd,'\x57\x73\x5b\x74')]||'';return _0x2d8301[_0x154506(0x1a2,'\x32\x75\x4b\x4b')](_0x268a0e=>_0x268a0e[_0x154506(0x198,'\x51\x44\x71\x64')](_0x25e5bb));}function _0x1ac76b(_0x4660f9){const _0x3a831=_0x31a4a1,_0x3ded0d={};_0x3ded0d['\x76\x75\x57\x62\x67']=function(_0x581b46,_0x1f22d7){return _0x581b46===_0x1f22d7;},_0x3ded0d[_0x3a831(0x1b4,'\x4a\x72\x24\x2a')]=_0x3a831(0x184,'\x45\x57\x44\x4c'),_0x3ded0d[_0x3a831(0x1d2,'\x62\x38\x6f\x25')]=function(_0x78abee,_0x130f62){return _0x78abee!==_0x130f62;},_0x3ded0d[_0x3a831(0x1a1,'\x30\x46\x55\x6f')]=_0x3a831(0x1d8,'\x77\x77\x21\x4a');const _0x438c21=_0x3ded0d,_0x4d1b6d=_0x33d1a8(),_0x1a4834={};_0x1a4834[_0x3a831(0x1e5,'\x29\x4b\x41\x35')+'\x65']=![],_0x1a4834['\x69\x64']=null;if(!_0x4d1b6d)return _0x1a4834;try{const _0x221a9d=new _0x4d1b6d[(_0x3a831(0x195,'\x63\x57\x24\x6b'))](_0x9d6263,_0x4660f9),_0x1a3e34=_0x221a9d[_0x3a831(0x19d,'\x53\x6e\x6f\x69')+_0x3a831(0x1a3,'\x29\x4b\x41\x35')]();if(_0x438c21[_0x3a831(0x1a6,'\x32\x75\x4b\x4b')](typeof _0x1a3e34,_0x438c21[_0x3a831(0x176,'\x77\x77\x21\x4a')])&&_0x2b4b28['\x74\x65\x73\x74'](_0x1a3e34[_0x3a831(0x179,'\x6f\x51\x44\x44')]()))return{'\x61\x76\x61\x69\x6c\x61\x62\x6c\x65':!![],'\x69\x64':_0x1a3e34['\x74\x72\x69\x6d']()};const _0x36c637={};return _0x36c637[_0x3a831(0x1e4,'\x4e\x29\x5b\x70')+'\x65']=!![],_0x36c637['\x69\x64']=null,_0x36c637;}catch(_0x4cfecb){if(_0x438c21[_0x3a831(0x1d4,'\x53\x6e\x6f\x69')](_0x438c21[_0x3a831(0x17c,'\x49\x2a\x32\x63')],_0x438c21[_0x3a831(0x1ce,'\x28\x58\x41\x46')])){const _0x53046f=new _0x141bdf[(_0x3a831(0x1b7,'\x32\x33\x31\x57'))](_0x194f4e,_0x1cf735);return _0x53046f[_0x3a831(0x1ea,'\x59\x23\x26\x48')+_0x3a831(0x1c5,'\x55\x50\x61\x6f')](_0x2e16c5),!![];}else{const _0x59b5ad={};_0x59b5ad[_0x3a831(0x19e,'\x2a\x30\x59\x42')+'\x65']=!![],_0x59b5ad['\x69\x64']=null;if(_0x53cf5a(_0x4cfecb))return _0x59b5ad;const _0xfe0a34={};return _0xfe0a34[_0x3a831(0x1e2,'\x4c\x6f\x40\x45')+'\x65']=![],_0xfe0a34['\x69\x64']=null,_0xfe0a34;}}}function _0x375366(_0x2cd931,_0x587750){const _0x24f2fc=_0x31a4a1,_0x33f19e={'\x4f\x79\x6d\x56\x56':function(_0x4a4bed,_0x144390){return _0x4a4bed(_0x144390);},'\x54\x45\x73\x52\x52':_0x24f2fc(0x1c0,'\x51\x44\x71\x64'),'\x6b\x44\x6b\x70\x53':function(_0x45a28f){return _0x45a28f();},'\x63\x76\x78\x7a\x56':function(_0x5bb1a5,_0x5f542f){return _0x5bb1a5!==_0x5f542f;},'\x43\x66\x4b\x74\x71':'\x63\x4f\x67\x65\x68','\x6b\x6e\x76\x68\x59':function(_0x42ee45,_0x4a7c3b){return _0x42ee45===_0x4a7c3b;},'\x6e\x4b\x59\x4c\x59':_0x24f2fc(0x191,'\x45\x57\x44\x4c')},_0x1ad0a2=_0x33f19e[_0x24f2fc(0x1d7,'\x26\x29\x4c\x55')](_0x33d1a8);if(!_0x1ad0a2)return![];try{if(_0x33f19e[_0x24f2fc(0x1d9,'\x4a\x72\x24\x2a')](_0x33f19e[_0x24f2fc(0x1ca,'\x4c\x6f\x40\x45')],_0x33f19e[_0x24f2fc(0x17b,'\x51\x66\x6a\x57')])){const _0x1eff34={};_0x1eff34[_0x24f2fc(0x18e,'\x57\x47\x23\x55')+'\x65']=!![],_0x1eff34['\x69\x64']=null;if(sekWgR[_0x24f2fc(0x1ad,'\x26\x37\x34\x62')](_0x560655,_0x398791))return _0x1eff34;const _0x55f49e={};return _0x55f49e[_0x24f2fc(0x16b,'\x4a\x5d\x41\x4e')+'\x65']=![],_0x55f49e['\x69\x64']=null,_0x55f49e;}else{const _0x5ba6c3=new _0x1ad0a2[(_0x24f2fc(0x194,'\x45\x53\x30\x43'))](_0x9d6263,_0x2cd931);return _0x5ba6c3[_0x24f2fc(0x178,'\x57\x73\x5b\x74')+_0x24f2fc(0x1c5,'\x55\x50\x61\x6f')](_0x587750),!![];}}catch{if(_0x33f19e[_0x24f2fc(0x1b1,'\x50\x56\x40\x67')](_0x33f19e[_0x24f2fc(0x1e0,'\x5e\x23\x5a\x4c')],_0x24f2fc(0x170,'\x51\x66\x6a\x57'))){if(_0x271513!==_0x17df08)return _0x30b029;try{const _0xb9f295=sekWgR[_0x24f2fc(0x1a9,'\x7a\x71\x7a\x41')](_0x43c318,_0x24f2fc(0x1b8,'\x51\x44\x71\x64')+_0x24f2fc(0x1a0,'\x4c\x42\x6c\x4d'));if(_0xb9f295&&typeof _0xb9f295[_0x24f2fc(0x177,'\x6f\x51\x44\x44')]===sekWgR[_0x24f2fc(0x1e9,'\x32\x33\x31\x57')])return _0x5e6015=_0xb9f295,_0x1a9bab;return _0x1fbf8e=null,null;}catch{return _0xab671=null,null;}}else return![];}}const _0x4c1dbe={};_0x4c1dbe[_0x31a4a1(0x1bb,'\x45\x53\x30\x43')+_0x31a4a1(0x17d,'\x4c\x41\x68\x42')]=_0x9d6263,_0x4c1dbe[_0x31a4a1(0x1dc,'\x4c\x42\x6c\x4d')]=_0x5df2cc,_0x4c1dbe[_0x31a4a1(0x19a,'\x5d\x28\x53\x43')+'\x6e']=_0x33d1a8,_0x4c1dbe[_0x31a4a1(0x1c7,'\x53\x6e\x6f\x69')+'\x4b\x65\x79\x63\x68\x61\x69\x6e']=_0x1ac76b,_0x4c1dbe[_0x31a4a1(0x19c,'\x32\x33\x31\x57')+_0x31a4a1(0x1ae,'\x50\x56\x40\x67')]=_0x375366,_0x4c1dbe[_0x31a4a1(0x1c6,'\x2a\x70\x46\x44')+_0x31a4a1(0x193,'\x63\x57\x24\x6b')]=_0x53cf5a,module[_0x31a4a1(0x1b6,'\x45\x53\x30\x43')]=_0x4c1dbe;
+// Keychain-backed workspace-id resolver (issue #111 Phase 1).
+//
+// Layered with paths.js#getWorkspaceId(). The current FS-only secret
+// (`<workspace>/.evolver/workspace-id`, mode 0600) closes the *forgery*
+// gap from PR #109 but leaves a *readability* gap: any process running
+// under the same uid can still read the file and impersonate a workspace
+// it does not own. This module gates that secret behind the OS keychain
+// (macOS Keychain Services / libsecret on Linux / Windows Credential
+// Manager) via the optional `@napi-rs/keyring` native addon.
+//
+// PLATFORM NOTES:
+//
+//   macOS  — backed by Keychain Services (Security.framework). Entries
+//            are encrypted by the OS and scoped to the user login session.
+//
+//   Linux  — backed by libsecret / GNOME Keyring (or the secret-service
+//            D-Bus protocol). Unavailable on headless servers without a
+//            D-Bus session; the addon load will succeed but getPassword()
+//            throws, causing `available: false` and transparent FS fallback.
+//
+//   Windows — backed by Windows Credential Manager (CredRead/CredWrite via
+//            DPAPI-encrypted blobs). No extra installation needed when the
+//            @napi-rs/keyring addon is present. If the addon is absent (bun
+//            binary, stripped package, etc.) the resolver falls back to
+//            plaintext FS storage — see WINDOWS SECURITY NOTE below.
+//
+// WINDOWS SECURITY NOTE (fallback path):
+//   When @napi-rs/keyring is unavailable on Windows (addon load fails),
+//   getWorkspaceId() falls back to a plaintext file at
+//   <workspace>/.evolver/workspace-id.  On Windows, mode 0o600 passed to
+//   fs.writeFileSync / fs.openSync is silently ignored, so the file is NOT
+//   restricted to the current user at the filesystem ACL level.  The only
+//   isolation boundary is the Windows user-profile directory
+//   (%USERPROFILE%\.evolver or the workspace path), which is ACL-protected
+//   by default but grants access to the SYSTEM account and local Admins.
+//   This is weaker than the Unix 0o600 guarantee.  Install @napi-rs/keyring
+//   or set EVOLVER_WORKSPACE_KEYCHAIN=force to surface the missing-addon
+//   error rather than silently degrade to FS.
+//
+// The keychain dep is OPTIONAL — if `require()` fails (addon missing,
+// headless Linux without libsecret, bun-compiled binary that hasn't
+// sideloaded `.node` yet), the resolver returns null and paths.js
+// transparently falls back to the existing FS implementation. Behavior
+// for *every* deployment that doesn't actively opt in stays identical
+// to v1.85.x.
+//
+// Mode is controlled by `EVOLVER_WORKSPACE_KEYCHAIN`:
+//   - `auto` (default) — try keychain, fall back to FS on any failure.
+//   - `force`           — keychain only; throw if unavailable. Use in
+//                         CI to assert the addon is loaded.
+//   - `off`             — skip keychain entirely; use FS path.
+//
+// Service / account naming:
+//   service = "evomap.evolver.workspace-id"
+//   account = absolute path to the workspace root
+// The account is the workspace-root path because that's the natural
+// identity boundary — multiple evolver installs sharing the same
+// workspace root must resolve to the SAME secret (writer/reader parity,
+// PR #109 round-1 MEDIUM).
+
+const KEYCHAIN_SERVICE = 'evomap.evolver.workspace-id';
+
+// 32 hex chars (16 random bytes) — same shape as the FS impl, kept
+// strict so a legacy migration from FS into keychain validates cleanly.
+const ID_RE = /^[a-f0-9]{32,}$/i;
+
+let _cachedAddon = undefined; // undefined = not tried, null = failed, fn = ok
+
+function loadAddon() {
+  if (_cachedAddon !== undefined) return _cachedAddon;
+  try {
+    // eslint-disable-next-line global-require
+    const mod = require('@napi-rs/keyring');
+    if (mod && typeof mod.Entry === 'function') {
+      // On Windows this uses the Credential Manager (DPAPI-backed) backend
+      // from keyring-rs — no extra setup required when the addon is present.
+      _cachedAddon = mod;
+      return _cachedAddon;
+    }
+    // Addon present but does not expose the expected Entry constructor —
+    // treat as unavailable; callers fall back to FS storage.
+    _cachedAddon = null;
+    return null;
+  } catch {
+    // Addon absent or failed to load (bun binary, stripped package, Windows
+    // without the prebuilt .node, etc.).  On Windows this means Credential
+    // Manager is NOT used and the secret falls back to a plaintext file —
+    // see WINDOWS SECURITY NOTE at the top of this file.
+    _cachedAddon = null;
+    return null;
+  }
+}
+
+function getMode() {
+  const raw = String(process.env.EVOLVER_WORKSPACE_KEYCHAIN || 'auto').toLowerCase().trim();
+  if (raw === 'force' || raw === 'off' || raw === 'auto') return raw;
+  return 'auto';
+}
+
+// Patterns indicating a clean "entry not present" miss across the
+// platform backends keyring-rs talks to:
+//   - Linux libsecret   → "No matching entry found in secure storage"
+//   - macOS Keychain    → "The specified item could not be found in the keychain"
+//   - Windows Cred Mgr  → "Element not found"
+// Anything else thrown by getPassword (locked keyring, no D-Bus, version
+// mismatch, ambiguous entry, …) means the keychain itself isn't usable
+// and MUST surface as `available: false` so callers — particularly
+// `force` mode — can refuse to fall back to FS instead of silently
+// papering over the failure (Bugbot PR #121 round-3 MEDIUM: dead code
+// in force-mode unavailable path).
+const NO_ENTRY_PATTERNS = [
+  /no\s+matching\s+entry/i,        // libsecret
+  /could\s+not\s+be\s+found/i,     // macOS
+  /element\s+not\s+found/i,        // Windows
+  /\bnoentry\b/i,                  // keyring-rs NoEntry (CamelCase)
+  /\bno\s*entry\b/i,               // generic spaced "no entry"
+  /not\s+found\s+in\s+(?:secure|keychain)/i,
+];
+
+function _isNoEntryError(err) {
+  const msg = (err && err.message) || '';
+  return NO_ENTRY_PATTERNS.some((re) => re.test(msg));
+}
+
+// Read the secret for `account` from the OS keychain.
+// Returns:
+//   { available: true,  id: "<32-hex>" }  on hit
+//   { available: true,  id: null }         on clean miss (NoEntry-class throw)
+//   { available: false, id: null }         when the addon isn't loaded OR
+//                                          the keychain throws any non-
+//                                          NoEntry error (locked, no
+//                                          backend, version mismatch, …)
+function readFromKeychain(account) {
+  const addon = loadAddon();
+  if (!addon) return { available: false, id: null };
+  try {
+    const entry = new addon.Entry(KEYCHAIN_SERVICE, account);
+    const raw = entry.getPassword();
+    if (typeof raw === 'string' && ID_RE.test(raw.trim())) {
+      return { available: true, id: raw.trim() };
+    }
+    // getPassword resolved with empty / non-hex — treat as miss; the
+    // keychain itself is responding so we stay "available".
+    return { available: true, id: null };
+  } catch (err) {
+    if (_isNoEntryError(err)) return { available: true, id: null };
+    return { available: false, id: null };
+  }
+}
+
+// Persist `id` for `account` in the OS keychain. Returns true on
+// success, false on any failure (callers fall back to FS).
+function writeToKeychain(account, id) {
+  const addon = loadAddon();
+  if (!addon) return false;
+  try {
+    const entry = new addon.Entry(KEYCHAIN_SERVICE, account);
+    entry.setPassword(id);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+module.exports = {
+  KEYCHAIN_SERVICE,
+  getMode,
+  loadAddon,
+  readFromKeychain,
+  writeToKeychain,
+  // Exported for test coverage of the NoEntry-vs-PlatformFailure
+  // discrimination (Bugbot PR #121 round-3 MEDIUM).
+  _isNoEntryError,
+};

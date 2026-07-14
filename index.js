@@ -2672,7 +2672,7 @@ async function main() {
         }
       }
 
-      const existingGenes = loadGenes();
+      const existingGenes = dryRun ? loadGenes({ seed: false }) : loadGenes();
       const existingCapsules = loadCapsules();
       // Dedup by Hub asset_id is the only safe key. Local-facing `id` (e.g.
       // `gene_gep_repair_from_errors`) collides between bundled default seed

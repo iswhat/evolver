@@ -37,6 +37,7 @@ const {
   _resetHubNodeSecretStateForTesting,
 } = require('../src/gep/a2aProtocol')._testing;
 const { computeAssetId } = require('../src/gep/contentHash');
+const hubFetchMod = require('../src/gep/hubFetch');
 const { MailboxStore } = require('../src/proxy/mailbox/store');
 
 function suppressionMarker(secret) {
@@ -1339,6 +1340,8 @@ describe('hubOpenEventStream', () => {
   var originalNodeSecretVersion;
   var originalEvolverHome;
   var originalEventSource;
+  var originalFetch;
+  var originalInsecure;
   var tmpDir;
 
   before(() => {
@@ -1349,6 +1352,8 @@ describe('hubOpenEventStream', () => {
     originalNodeSecretVersion = process.env.A2A_NODE_SECRET_VERSION;
     originalEvolverHome = process.env.EVOLVER_HOME;
     originalEventSource = globalThis.EventSource;
+    originalFetch = global.fetch;
+    originalInsecure = process.env.EVOMAP_HUB_ALLOW_INSECURE;
     process.env.A2A_HUB_URL = 'http://localhost:19999';
     process.env.A2A_NODE_ID = 'test-node';
     process.env.EVOLVER_HOME = path.join(tmpDir, '.evomap');
@@ -1365,6 +1370,9 @@ describe('hubOpenEventStream', () => {
     else process.env.A2A_NODE_SECRET_VERSION = originalNodeSecretVersion;
     if (originalEvolverHome === undefined) delete process.env.EVOLVER_HOME;
     else process.env.EVOLVER_HOME = originalEvolverHome;
+    if (originalInsecure === undefined) delete process.env.EVOMAP_HUB_ALLOW_INSECURE;
+    else process.env.EVOMAP_HUB_ALLOW_INSECURE = originalInsecure;
+    global.fetch = originalFetch;
     if (originalEventSource === undefined) delete globalThis.EventSource;
     else globalThis.EventSource = originalEventSource;
     fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -1388,11 +1396,84 @@ describe('hubOpenEventStream', () => {
     process.env.A2A_HUB_URL = saved;
   });
 
-  it('returns ok:false when no EventSource is available', () => {
+  it('falls back to hubFetch SSE when no EventSource is available', async () => {
     delete globalThis.EventSource;
-    var result = hubOpenEventStream({});
-    assert.equal(result.ok, false);
-    assert.match(result.error, /eventsource_not_available/);
+    var savedHubUrl = process.env.A2A_HUB_URL;
+    process.env.A2A_HUB_URL = 'https://hub.example.test';
+    var calledUrl = null;
+    var calledOpts = null;
+    hubFetchMod._setFetchImplForTest(async function (url, opts) {
+      calledUrl = url;
+      calledOpts = opts;
+      const body = Buffer.from('event: message\ndata: {"type":"task_available","payload":{"ok":true}}\n\n');
+      return {
+        ok: true,
+        status: 200,
+        body: {
+          getReader: function () {
+            var done = false;
+            return {
+              read: async function () {
+                if (done) return { done: true };
+                done = true;
+                return { done: false, value: body };
+              },
+              releaseLock: function () {},
+            };
+          },
+        },
+      };
+    });
+
+    try {
+      var result = hubOpenEventStream({ durationMs: 1000, forceFetchFallback: true });
+      assert.equal(result.ok, true);
+      var ev = await new Promise(function (resolve) {
+        result.eventSource.onmessage = function (msg) {
+          result.close();
+          resolve(msg);
+        };
+      });
+
+      assert.ok(calledUrl.includes('/a2a/events/stream?'), 'URL should contain stream path');
+      assert.ok(calledUrl.includes('node_id='), 'URL should contain node_id param');
+      assert.equal(calledOpts.method, 'GET');
+      assert.equal(ev.data, '{"type":"task_available","payload":{"ok":true}}');
+    } finally {
+      hubFetchMod._setFetchImplForTest(null);
+      process.env.A2A_HUB_URL = savedHubUrl;
+    }
+  });
+
+  it('drains the response body when the fallback SSE open fails (no socket leak)', async () => {
+    delete globalThis.EventSource;
+    var savedHubUrl = process.env.A2A_HUB_URL;
+    process.env.A2A_HUB_URL = 'https://hub.example.test';
+    var canceled = false;
+    hubFetchMod._setFetchImplForTest(async function () {
+      return {
+        ok: false,
+        status: 503,
+        body: {
+          cancel: async function () { canceled = true; },
+        },
+      };
+    });
+
+    var result = null;
+    try {
+      result = hubOpenEventStream({ durationMs: 1000, forceFetchFallback: true });
+      assert.equal(result.ok, true);
+      var err = await new Promise(function (resolve) {
+        result.eventSource.onerror = function (e) { resolve(e); };
+      });
+      assert.match(String(err && err.message || err), /event_stream_http_503/);
+      assert.equal(canceled, true, 'non-ok SSE open must drain res.body to free the socket');
+    } finally {
+      if (result) result.close();
+      hubFetchMod._setFetchImplForTest(null);
+      process.env.A2A_HUB_URL = savedHubUrl;
+    }
   });
 
   it('uses globalThis.EventSource when available', () => {

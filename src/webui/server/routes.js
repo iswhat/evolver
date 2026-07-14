@@ -24,6 +24,17 @@ function buildWebUiRoutes() {
     'GET /webui/memory-graph': async ({ query }) => ({ body: observer.getMemoryGraph(query) }),
     'GET /webui/skills': async () => ({ body: observer.listSkills() }),
     'GET /webui/logs/evolver': async ({ query }) => ({ body: observer.getEvolverLog(query) }),
+    'GET /webui/github/repo': async () => ({ body: observer.getRepoInfo() }),
+    'GET /webui/github/prs': async () => ({ body: { data: observer.getOpenPrs() } }),
+    'GET /webui/github/pr/:number': async ({ params }) => {
+      // PR number is untrusted route input: only a positive integer may reach
+      // the observer (which shells `gh`). Reject anything else with a clean 400
+      // rather than letting it fall through to a lookup.
+      if (!/^\d+$/.test(String(params.number))) {
+        throw httpError(400, 'INVALID_PR_NUMBER', 'PR number must be a positive integer');
+      }
+      return { body: await observer.getPrStatus(Number(params.number)) };
+    },
   };
 }
 
