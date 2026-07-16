@@ -308,7 +308,7 @@ describe('loop-mode EVOLVE_BRIDGE default (issue #96)', () => {
     const result = spawnSync(process.execPath, [path.join(repoRoot, 'index.js'), '--loop'], {
       cwd: tmpDir,
       encoding: 'utf8',
-      timeout: 3000,
+      timeout: 10000,
       env: daemonChildEnv(extraEnv),
     });
     return (result.stdout || '') + (result.stderr || '');

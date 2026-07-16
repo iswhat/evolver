@@ -225,8 +225,8 @@ describe('Windows no-console process launch guards', () => {
   it('adapter git probes hide child windows on Windows', () => {
     const sessionEnd = fs.readFileSync(path.resolve(__dirname, '..', 'src', 'adapters', 'scripts', 'evolver-session-end.js'), 'utf8');
     const runtimePaths = fs.readFileSync(path.resolve(__dirname, '..', 'src', 'adapters', 'scripts', '_runtimePaths.js'), 'utf8');
-    assert.match(sessionEnd, /spawnSync\('git', args,[\s\S]*?shell:\s*false,[\s\S]*?windowsHide:\s*true/);
-    assert.match(runtimePaths, /spawnSync\('git', \['rev-parse', '--is-inside-work-tree'\],[\s\S]*?shell:\s*false,[\s\S]*?windowsHide:\s*true/);
+    assert.match(sessionEnd, /spawnSync\(gitExecutable\(\), args,[\s\S]*?shell:\s*false,[\s\S]*?windowsHide:\s*true/);
+    assert.match(runtimePaths, /spawnSync\(gitExecutable\(\), \['rev-parse', '--is-inside-work-tree'\],[\s\S]*?shell:\s*false,[\s\S]*?windowsHide:\s*true/);
   });
 
   it('daemon loop git probes hide child windows on Windows', () => {

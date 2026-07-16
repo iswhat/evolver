@@ -402,6 +402,15 @@ function findMemoryGraph(evolverRoot) {
   return path.join(userDir, 'memory_graph.jsonl');
 }
 
+function gitExecutable() {
+  if (process.platform !== 'win32') {
+    const xcodeGit = '/Applications/Xcode.app/Contents/Developer/usr/libexec/git-core/git';
+    if (fs.existsSync(xcodeGit)) return xcodeGit;
+    if (fs.existsSync('/usr/bin/git')) return '/usr/bin/git';
+  }
+  return 'git';
+}
+
 // Is `dir` inside a git work tree? Cheap, no-shell `git rev-parse`. Returns
 // false on any error (git missing, not a repo, timeout) and never throws.
 // The session-start hook uses this only to decide whether to surface a
@@ -409,7 +418,7 @@ function findMemoryGraph(evolverRoot) {
 // suppresses the notice rather than breaking anything.
 function isGitWorkspace(dir) {
   try {
-    const res = spawnSync('git', ['rev-parse', '--is-inside-work-tree'], {
+    const res = spawnSync(gitExecutable(), ['rev-parse', '--is-inside-work-tree'], {
       cwd: dir,
       encoding: 'utf8',
       timeout: 5000,

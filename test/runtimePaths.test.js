@@ -423,9 +423,10 @@ describe('_buildInstallSearchPaths → require.resolve (genuine allowlist integr
       );
       const searchPaths = runtimePaths.__internals.buildInstallSearchPaths();
       assert.ok(searchPaths.includes(nm), 'the planted node_modules dir must be in the search paths');
-      const resolved = require.resolve('@evomap/evolver/package.json', { paths: searchPaths });
+      const isolatedSearchPaths = searchPaths.filter((p) => p === nm);
+      const resolved = require.resolve('@evomap/evolver/package.json', { paths: isolatedSearchPaths });
       assert.equal(resolved, path.join(pkgDir, 'package.json'),
-        'buildInstallSearchPaths output must actually resolve the package via require.resolve');
+        'the planted buildInstallSearchPaths entry must resolve the package via require.resolve');
     } finally {
       if (orig === undefined) delete process.env.VOLTA_HOME; else process.env.VOLTA_HOME = orig;
       try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (_) {}

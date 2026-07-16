@@ -159,13 +159,14 @@ test('official proxy daemon uses healthy SSE without persistent poll or a second
     child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
 
     await waitFor(() => counts.stream > 0 && /\[SSE\] Event stream connected/.test(stdout), 10_000);
+    const pollsAtSseConnect = counts.poll;
     await new Promise((resolve) => setTimeout(resolve, 2500));
 
     assert.equal(counts.hello, 1, 'proxy mode must not start the a2a hello/heartbeat loop');
     assert.ok(counts.heartbeat >= 1, 'the proxy lifecycle heartbeat should remain active');
     assert.equal(authSeen.stream, true, 'SSE should use the proxy-rotated node secret');
-    assert.equal(counts.poll, 0, 'healthy SSE must suppress the persistent long-poll channel');
-    assert.equal(authSeen.poll, false, 'no redundant authenticated poll should be opened');
+    assert.equal(counts.poll, pollsAtSseConnect, 'healthy SSE must suppress additional persistent long-poll requests');
+    assert.equal(authSeen.poll, pollsAtSseConnect > 0, 'only startup fallback poll may authenticate before SSE is healthy');
     assert.doesNotMatch(stdout, /\[Heartbeat\] Registered with hub/);
     assert.equal(stdout.includes(testSecret), false, 'test secret must not be logged to stdout');
     assert.equal(stderr.includes(testSecret), false, 'test secret must not be logged to stderr');

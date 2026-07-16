@@ -24,12 +24,21 @@ const { findEvolverRoot, findMemoryGraph, resolveProjectDir, resolveWorkspaceId 
 // consistent with the review-time reader in src/evolve/pipeline/collect.js
 // (Bugbot PR #109 round-1 MEDIUM; reader/writer drift flagged on PR #555).
 
+function gitExecutable() {
+  if (process.platform !== 'win32') {
+    const xcodeGit = '/Applications/Xcode.app/Contents/Developer/usr/libexec/git-core/git';
+    if (fs.existsSync(xcodeGit)) return xcodeGit;
+    if (fs.existsSync('/usr/bin/git')) return '/usr/bin/git';
+  }
+  return 'git';
+}
+
 function runGit(args, cwd) {
   // Argv-array form, no shell. Avoids POSIX `2>/dev/null` redirects that
   // break on Windows cmd.exe (#537). Failures (e.g. no HEAD~1 in a fresh
   // repo) are surfaced as a non-zero status; callers distinguish them
   // from successful empty output via the `ok` flag (PR #94 round-6 LOW).
-  const res = spawnSync('git', args, {
+  const res = spawnSync(gitExecutable(), args, {
     cwd,
     encoding: 'utf8',
     timeout: 5000,
